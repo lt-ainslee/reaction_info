@@ -1,0 +1,8 @@
+node_modules/
+dist/
+# Copied from node_modules by scripts/copy-rdkit.mjs on install
+public/rdkit/
+.wrangler/
+*.log
+.DS_Store
+*.tsbuildinfo
