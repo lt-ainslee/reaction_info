@@ -1,5 +1,8 @@
-# Cloudflare Pages project (static site). Deploy with `npm run deploy`
-# or connect the GitHub repo in the Cloudflare dashboard.
+# Cloudflare Workers static-assets site (no Worker script needed).
+# Build: `npm run build`, deploy: `npx wrangler deploy` (Workers Builds runs this automatically).
 name = "reaction-info"
-pages_build_output_dir = "dist"
 compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"

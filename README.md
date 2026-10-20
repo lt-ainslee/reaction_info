@@ -18,19 +18,21 @@ npm run build    # 输出到 dist/
 
 需要 Node.js 20+。
 
-## 部署到 Cloudflare Pages
+## 部署到 Cloudflare（Workers 静态资源）
+
+`wrangler.toml` 已配置为 Workers 静态资源站点（`[assets] directory = "./dist"`），无需 Worker 脚本。
 
 **方式一：连接 GitHub（推荐，push 后自动部署）**
 
-1. Cloudflare 控制台 → Workers & Pages → Create → Pages → Connect to Git，选择本仓库。
-2. 构建设置：Framework preset 选 `Vite`（或 None），Build command `npm run build`，Build output directory `dist`。
-3. 环境变量（可选）：`NODE_VERSION=22`（仓库里已有 `.node-version`）。
+1. Cloudflare 控制台 → Workers & Pages → Create → Import a repository，选择本仓库。
+2. Build command：`npm run build`；Deploy command：`npx wrangler deploy`（默认值即可）。
+3. 部署成功后访问 `https://reaction-info.<你的子域>.workers.dev`，也可在 Settings → Domains & Routes 绑定自定义域名。
 
 **方式二：命令行**
 
 ```bash
 npx wrangler login
-npm run deploy   # 构建并上传 dist/ 到 Pages 项目 reaction-info
+npm run deploy   # 构建并部署
 ```
 
 **仅限课题组访问（可选）**：在 Cloudflare Zero Trust → Access → Applications 中为该 Pages 域名添加一个应用，策略设置为允许指定邮箱（或邮箱域名）登录。50 人以内免费。
