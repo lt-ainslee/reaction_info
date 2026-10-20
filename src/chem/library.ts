@@ -1,4 +1,4 @@
-import type { Component, Form } from './stoich';
+import type { Component, Form, Phase } from './stoich';
 import { formulaMass } from './formula';
 
 // Built-in list of common reagents/solvents with the data that matters for
@@ -17,6 +17,8 @@ export interface LibraryEntry {
   molarity?: number;
   wtPercent?: number;
   solutionDensity?: number;
+  /** Defaults to liquid when a density is listed, else solid. */
+  phase?: Phase;
 }
 
 export const LIBRARY: LibraryEntry[] = [
@@ -75,7 +77,7 @@ export const LIBRARY: LibraryEntry[] = [
   { en: 'Acetic anhydride', zh: '乙酸酐', aliases: ['Ac2O', '醋酸酐'], formula: 'C4H6O3', cas: '108-24-7', smiles: 'CC(=O)OC(C)=O', density: 1.08 },
   { en: 'Thionyl chloride', zh: '氯化亚砜', aliases: ['SOCl2', '二氯亚砜'], formula: 'SOCl2', cas: '7719-09-7', smiles: 'O=S(Cl)Cl', density: 1.638 },
   { en: 'Oxalyl chloride', zh: '草酰氯', aliases: ['(COCl)2'], formula: 'C2Cl2O2', cas: '79-37-8', smiles: 'O=C(Cl)C(=O)Cl', density: 1.478 },
-  { en: 'Di-tert-butyl dicarbonate', zh: '二碳酸二叔丁酯', aliases: ['Boc2O', '(Boc)2O', 'Boc酸酐'], formula: 'C10H18O5', cas: '24424-99-5', smiles: 'CC(C)(C)OC(=O)OC(=O)OC(C)(C)C', density: 0.95 },
+  { en: 'Di-tert-butyl dicarbonate', zh: '二碳酸二叔丁酯', aliases: ['Boc2O', '(Boc)2O', 'Boc酸酐'], formula: 'C10H18O5', cas: '24424-99-5', smiles: 'CC(C)(C)OC(=O)OC(=O)OC(C)(C)C', density: 0.95, phase: 'solid' },
   { en: 'N-Bromosuccinimide', zh: 'N-溴代丁二酰亚胺', aliases: ['NBS'], formula: 'C4H4BrNO2', cas: '128-08-5', smiles: 'BrN1C(=O)CCC1=O' },
   { en: 'tert-Butyldimethylsilyl chloride', zh: '叔丁基二甲基氯硅烷', aliases: ['TBSCl', 'TBDMSCl'], formula: 'C6H15ClSi', cas: '18162-48-6', smiles: 'CC(C)(C)[Si](C)(C)Cl' },
   { en: 'Benzyl bromide', zh: '苄溴', aliases: ['BnBr', '溴化苄'], formula: 'C7H7Br', cas: '100-39-0', smiles: 'BrCc1ccccc1', density: 1.438 },
@@ -132,6 +134,8 @@ export function libraryToComponent(e: LibraryEntry, lang: 'zh' | 'en'): Omit<Com
     cas: e.cas,
     mw: formulaMass(e.formula) ?? undefined,
     density: e.density,
+    densitySource: e.density ? 'library' : undefined,
+    phase: e.form && e.form !== 'neat' ? undefined : e.phase ?? (e.density ? 'liquid' : 'solid'),
     purity: e.purity ?? 100,
     form: e.form ?? 'neat',
     molarity: e.molarity,

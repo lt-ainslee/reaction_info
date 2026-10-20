@@ -142,6 +142,7 @@ describe('text input', () => {
   it('splits name reactions and line lists', () => {
     expect(splitNameReaction('苯甲酸 + 甲醇 -> 苯甲酸甲酯')).toEqual({ reactants: ['苯甲酸', '甲醇'], products: ['苯甲酸甲酯'] });
     expect(detectFormat('benzoic acid + methanol → methyl benzoate')).toBe('names');
+    expect(parseInputText(rd, 'O=Cc1ccccc1\nOC(=O)c1ccccc1')!.molecules).toEqual([{ text: 'O=Cc1ccccc1' }, { text: 'OC(=O)c1ccccc1' }]);
     expect(parseInputText(rd, 'CCO\nTHF\n64-17-5')!.molecules).toEqual([{ text: 'CCO' }, { text: 'THF' }, { text: '64-17-5' }]);
     expect(parseInputText(rd, 'InChI=1S/CH4O/c1-2/h2H,1H3')!.molecules).toEqual([{ text: 'InChI=1S/CH4O/c1-2/h2H,1H3' }]);
   });

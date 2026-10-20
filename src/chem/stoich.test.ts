@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   addComponent, compute, emptyReaction, mergeComponents, newComponent, planForProduct, removeComponent, scale,
-  setMass, setMmol, setReference, setRole, setVolume, type Reaction,
+  needsDensity, setMass, setMmol, setReference, setRole, setVolume, updateComponent, type Reaction,
 } from './stoich';
 
 // Fischer esterification-like setup: benzoic acid (ref), MeOH (neat liquid),
@@ -151,5 +151,24 @@ describe('mergeComponents equiv', () => {
     expect(a.components.find((c) => c.name === 'MeOH')!.equiv).toBe(2);
     const b = mergeComponents(build(), [ref, inc], key, { replace: true, hasAgents: false, explicitEquiv: new Set([inc.id]) });
     expect(b.components.find((c) => c.name === 'MeOH')!.equiv).toBe(5);
+  });
+});
+
+describe('phase', () => {
+  it('gives volumes for liquids and unknown phase, not for solids', () => {
+    let r = build();
+    expect(get(r, 'b').volume).toBeDefined(); // MeOH, phase unknown, has density
+    r = updateComponent(r, 'b', { phase: 'liquid' });
+    expect(get(r, 'b').volume).toBeCloseTo((20 * 32.04) / 0.792);
+    r = updateComponent(r, 'b', { phase: 'solid' });
+    expect(get(r, 'b').volume).toBeUndefined();
+    expect(setVolume(r, 'b', 100)).toBe(r);
+  });
+
+  it('flags liquids without density', () => {
+    const c = newComponent({ name: 'X', role: 'reactant', phase: 'liquid' });
+    expect(needsDensity(c)).toBe(true);
+    expect(needsDensity({ ...c, density: 1 })).toBe(false);
+    expect(needsDensity({ ...c, phase: 'solid' })).toBe(false);
   });
 });

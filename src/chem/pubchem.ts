@@ -1,3 +1,5 @@
+import type { Phase } from './stoich';
+
 // PubChem PUG REST / PUG View client (CORS-enabled, called from the browser).
 // Docs: https://pubchem.ncbi.nlm.nih.gov/docs/pug-rest
 
@@ -14,10 +16,17 @@ export interface PubChemHit {
   smiles?: string;
 }
 
-export interface PubChemDetails {
-  cas?: string;
+export interface PubChemPhysical {
   density?: number;
   densityText?: string;
+  phase?: Phase;
+  description: string[];
+  meltingPoint: string[];
+  boilingPoint: string[];
+}
+
+export interface PubChemDetails extends PubChemPhysical {
+  cas?: string;
   meltingPoint: string[];
   boilingPoint: string[];
   flashPoint: string[];
@@ -141,14 +150,71 @@ export function parseDensity(texts: string[]): { value: number; text: string } |
   return undefined;
 }
 
+/** First temperature in °C in a PubChem text ("122 °C", "13-14 °C", "252 °F (NTP, 1992)"). */
+export function parseTempC(text: string): number | undefined {
+  const m = /(-?\d+(?:\.\d+)?)(?:\s*(?:-|–|to)\s*(-?\d+(?:\.\d+)?))?\s*(?:°|º|deg\.?)\s*([CF])(?![a-z])/i.exec(text);
+  if (!m) return undefined;
+  const v = m[2] !== undefined ? (Number(m[1]) + Number(m[2])) / 2 : Number(m[1]);
+  return m[3].toUpperCase() === 'F' ? ((v - 32) * 5) / 9 : v;
+}
+
+const median = (xs: number[]) => {
+  if (!xs.length) return undefined;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.floor(s.length / 2)];
+};
+
+/** State at ~25 °C from melting / boiling points, else from the physical description. */
+export function inferPhase(description: string[], meltingPoint: string[], boilingPoint: string[]): Phase | undefined {
+  const temps = (xs: string[]) => xs.map(parseTempC).filter((x): x is number => x !== undefined);
+  const mp = median(temps(meltingPoint));
+  const bp = median(temps(boilingPoint));
+  if (bp !== undefined && bp < 15) return 'gas';
+  if (mp !== undefined && mp > 35) return 'solid';
+  if (mp !== undefined && mp < 15) return 'liquid';
+
+  const votes = { solid: 0, liquid: 0, gas: 0 };
+  for (const d of description) {
+    if (/\b(liquid|oil|oily)\b/i.test(d)) votes.liquid++;
+    if (/solid|crystal|powder|needles|flakes|prisms|plates|granul|leaflets|lumps|pellets|waxy/i.test(d)) votes.solid++;
+    if (/\bgas\b/i.test(d)) votes.gas++;
+  }
+  const best = (Object.entries(votes) as [Phase, number][]).sort((a, b) => b[1] - a[1]);
+  if (best[0][1] > 0 && best[0][1] > best[1][1]) return best[0][0];
+  if (mp !== undefined) return mp > 25 ? 'solid' : 'liquid';
+  return undefined;
+}
+
+/** Physical state, density, mp and bp: what is needed to dispense a compound. */
+export async function fetchPhysical(cid: number): Promise<PubChemPhysical> {
+  const [desc, density, mp, bp] = [
+    await viewHeading(cid, 'Physical Description').catch(() => []),
+    await viewHeading(cid, 'Density').catch(() => []),
+    await viewHeading(cid, 'Melting Point').catch(() => []),
+    await viewHeading(cid, 'Boiling Point').catch(() => []),
+  ];
+  const description = infoStrings(desc);
+  const meltingPoint = infoStrings(mp);
+  const boilingPoint = infoStrings(bp);
+  const d = parseDensity(infoStrings(density));
+  return {
+    density: d?.value,
+    densityText: d?.text,
+    phase: inferPhase(description, meltingPoint, boilingPoint),
+    description: description.slice(0, 3),
+    meltingPoint: meltingPoint.slice(0, 3),
+    boilingPoint: boilingPoint.slice(0, 3),
+  };
+}
+
 export async function fetchDetails(cid: number): Promise<PubChemDetails> {
-  const headings = ['CAS', 'Density', 'Melting Point', 'Boiling Point', 'Flash Point', 'Solubility', 'GHS Classification'];
+  const phys = await getPhysicalCached(cid);
+  const headings = ['CAS', 'Flash Point', 'Solubility', 'GHS Classification'];
   const results: Info[][] = [];
   for (const h of headings) results.push(await viewHeading(cid, h).catch(() => []));
-  const [cas, density, mp, bp, fp, sol, ghs] = results;
+  const [cas, fp, sol, ghs] = results;
 
   const casList = infoStrings(cas).filter(isCas);
-  const d = parseDensity(infoStrings(density));
 
   const pictograms = new Set<string>();
   const hazards = new Set<string>();
@@ -161,11 +227,8 @@ export async function fetchDetails(cid: number): Promise<PubChemDetails> {
 
   const top = (infos: Info[], n = 3) => infoStrings(infos).slice(0, n);
   return {
+    ...phys,
     cas: casList[0],
-    density: d?.value,
-    densityText: d?.text,
-    meltingPoint: top(mp),
-    boilingPoint: top(bp),
     flashPoint: top(fp),
     solubility: top(sol),
     ghsPictograms: [...pictograms],
@@ -175,26 +238,29 @@ export async function fetchDetails(cid: number): Promise<PubChemDetails> {
 
 // ---- cache (localStorage) ----
 
-const CACHE_KEY = 'pubchem-details-v1';
-
-export async function getDetailsCached(cid: number): Promise<PubChemDetails> {
-  let cache: Record<string, PubChemDetails> = {};
-  try {
-    cache = JSON.parse(localStorage.getItem(CACHE_KEY) ?? '{}');
-  } catch {
-    /* ignore */
-  }
-  if (cache[cid]) return cache[cid];
-  const d = await fetchDetails(cid);
-  try {
-    cache[cid] = d;
-    const keys = Object.keys(cache);
-    if (keys.length > 200) delete cache[keys[0]];
-    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    /* storage full / disabled */
-  }
-  return d;
+function cached<T>(key: string, fetcher: (cid: number) => Promise<T>) {
+  return async (cid: number): Promise<T> => {
+    let cache: Record<string, T> = {};
+    try {
+      cache = JSON.parse(localStorage.getItem(key) ?? '{}');
+    } catch {
+      /* ignore */
+    }
+    if (cache[cid]) return cache[cid];
+    const d = await fetcher(cid);
+    try {
+      cache[cid] = d;
+      const keys = Object.keys(cache);
+      if (keys.length > 300) delete cache[keys[0]];
+      localStorage.setItem(key, JSON.stringify(cache));
+    } catch {
+      /* storage full / disabled */
+    }
+    return d;
+  };
 }
+
+export const getPhysicalCached = cached('pubchem-physical-v1', fetchPhysical);
+export const getDetailsCached = cached('pubchem-details-v2', fetchDetails);
 
 export const pubchemUrl = (cid: number) => `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}`;

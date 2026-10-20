@@ -55,3 +55,29 @@ describe('fmt', () => {
     expect(fmt(undefined)).toBe('');
   });
 });
+
+import { inferPhase, parseTempC } from './pubchem';
+
+describe('phase from PubChem text', () => {
+  it('parses temperatures', () => {
+    expect(parseTempC('122.4 °C')).toBeCloseTo(122.4);
+    expect(parseTempC('-97.6 °C')).toBeCloseTo(-97.6);
+    expect(parseTempC('13-14 °C')).toBeCloseTo(13.5);
+    expect(parseTempC('252 °F (NTP, 1992)')).toBeCloseTo(122.2, 1);
+    expect(parseTempC('MP: 5.5 deg C')).toBeCloseTo(5.5);
+    expect(parseTempC('no number')).toBeUndefined();
+  });
+
+  it('infers phase', () => {
+    // benzaldehyde, benzoic acid, methylamine
+    expect(inferPhase(['Colorless liquid with an almond odor'], ['-26 °C'], ['179 °C'])).toBe('liquid');
+    expect(inferPhase(['White crystalline powder'], ['122.4 °C'], ['249 °C'])).toBe('solid');
+    expect(inferPhase(['Colorless gas'], ['-93 °C'], ['-6.3 °C'])).toBe('gas');
+    // no temperatures: description vote
+    expect(inferPhase(['Clear colorless oil'], [], [])).toBe('liquid');
+    expect(inferPhase(['Liquid', 'Solid or liquid'], [], [])).toBe('liquid');
+    expect(inferPhase([], [], [])).toBeUndefined();
+    // ambiguous mp 20–30 resolved by description
+    expect(inferPhase(['Colorless solid'], ['23 °C'], [])).toBe('solid');
+  });
+});

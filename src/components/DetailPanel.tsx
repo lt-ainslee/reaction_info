@@ -5,6 +5,7 @@ import { formulaMass } from '../chem/formula';
 import { parseInputText } from '../chem/parseInput';
 import { isValidSmiles, smilesInfo, smilesToSvg } from '../chem/rdkit';
 import type { Component } from '../chem/stoich';
+import type { OpenEditor } from '../App';
 import { useI18n } from '../i18n';
 import { fmt } from '../units';
 
@@ -23,11 +24,12 @@ const GHS: Record<string, [string, string]> = {
 interface Props {
   c: Component;
   rd: MainModule | null;
+  openEditor: OpenEditor;
   onUpdate: (p: Partial<Component>) => void;
   onClose: () => void;
 }
 
-export function DetailPanel({ c, rd, onUpdate, onClose }: Props) {
+export function DetailPanel({ c, rd, openEditor, onUpdate, onClose }: Props) {
   const { t, lang } = useI18n();
   const [details, setDetails] = useState<PubChemDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,9 +38,9 @@ export function DetailPanel({ c, rd, onUpdate, onClose }: Props) {
   const [structMsg, setStructMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   /** Accept a SMILES, or a pasted ChemDraw molfile / CDXML (first structure). */
-  const applyStructure = () => {
+  const applyStructure = (input = structure) => {
     if (!rd) return;
-    const raw = structure.trim();
+    const raw = input.trim();
     let smiles: string | undefined;
     if (raw && isValidSmiles(rd, raw) && !/\s/.test(raw)) smiles = raw;
     else {
@@ -53,7 +55,17 @@ export function DetailPanel({ c, rd, onUpdate, onClose }: Props) {
     }
     setStructure(smiles);
     // A new structure invalidates the PubChem record of the old one.
-    onUpdate({ smiles, formula: info.formula, mw: info.mw, cid: undefined });
+    // Re-run the phase/density lookup unless the user entered the density.
+    const keepDensity = c.densitySource === 'manual';
+    onUpdate({
+      smiles,
+      formula: info.formula,
+      mw: info.mw,
+      cid: undefined,
+      lookup: undefined,
+      phase: undefined,
+      ...(keepDensity ? {} : { density: undefined, densitySource: undefined }),
+    });
     setStructMsg({ ok: true, text: t.structureUpdated });
   };
 
@@ -120,8 +132,14 @@ export function DetailPanel({ c, rd, onUpdate, onClose }: Props) {
         />
       </label>
       <div className="row">
-        <button className="small" onClick={applyStructure} disabled={!rd || !structure.trim() || structure.trim() === c.smiles}>
+        <button className="small" onClick={() => applyStructure()} disabled={!rd || !structure.trim() || structure.trim() === c.smiles}>
           {t.updateStructure}
+        </button>
+        <button
+          className="small ghost"
+          onClick={() => openEditor({ mode: 'molecule', initial: c.smiles, onApply: ({ text }) => applyStructure(text) })}
+        >
+          ✏️ {t.draw}
         </button>
         {structMsg && <span className={structMsg.ok ? 'ok small' : 'warn small'}>{structMsg.text}</span>}
       </div>
@@ -172,7 +190,7 @@ export function DetailPanel({ c, rd, onUpdate, onClose }: Props) {
             <dd>
               {details.densityText ?? <span className="muted">{t.noData}</span>}
               {details.density && details.density !== c.density && (
-                <button className="small" onClick={() => onUpdate({ density: details.density })}>
+                <button className="small" onClick={() => onUpdate({ density: details.density, densitySource: 'pubchem' })}>
                   {t.useDensity} ({details.density})
                 </button>
               )}

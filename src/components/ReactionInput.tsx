@@ -1,5 +1,5 @@
 import type { MainModule } from '@rdkit/rdkit';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { detectFormat, parseInputText, type ParsedInput } from '../chem/parseInput';
 import { resolveParsed, type Resolved } from '../chem/resolve';
 import { useI18n } from '../i18n';
@@ -12,13 +12,13 @@ interface Props {
   /** Current equation as editable text (reaction SMILES). */
   currentEquation: () => string;
   onApply: (r: Resolved, mode: ApplyMode) => void;
+  /** Open the drawing editor with the current equation. */
+  onDraw: () => void;
 }
 
 const STRUCTURED = new Set(['cdxml', 'rxn', 'molfile']);
-const isEditable = (el: Element | null) =>
-  !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el as HTMLElement).isContentEditable);
 
-export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: Props) {
+export function ReactionInput({ rd, hasComponents, currentEquation, onApply, onDraw }: Props) {
   const { t, lang } = useI18n();
   const [text, setText] = useState('');
   /** Large structured payloads (CDXML, molfiles) are kept out of the textarea. */
@@ -26,7 +26,6 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: P
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ kind: 'ok' | 'warn'; text: string } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const boxRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const source = payload?.text ?? text;
@@ -44,42 +43,7 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: P
     }
   };
 
-  const handleClipboard = (data: DataTransfer | null): boolean => {
-    if (!data) return false;
-    const plain = data.getData('text/plain');
-    const html = data.getData('text/html');
-    const cdxmlInHtml = /<CDXML[\s>]/i.test(html) ? html.slice(html.search(/<\?xml|<CDXML/i)) : '';
-    if (plain.trim() || cdxmlInHtml) {
-      takeText(cdxmlInHtml || plain);
-      return true;
-    }
-    if ([...data.items].some((i) => i.type.startsWith('image/'))) {
-      setMessage({ kind: 'warn', text: t.pasteImage });
-      return true;
-    }
-    return false;
-  };
-
-  // Ctrl+V anywhere on the page (outside other inputs) goes to this box.
-  useEffect(() => {
-    const onPaste = (e: ClipboardEvent) => {
-      if (isEditable(document.activeElement)) return;
-      if (handleClipboard(e.clipboardData)) {
-        e.preventDefault();
-        boxRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    };
-    document.addEventListener('paste', onPaste);
-    return () => document.removeEventListener('paste', onPaste);
-  });
-
-  const readFile = async (f: File) => {
-    if (/\.cdx$/i.test(f.name)) {
-      setMessage({ kind: 'warn', text: t.cdxBinary });
-      return;
-    }
-    takeText(await f.text(), f.name);
-  };
+  const readFile = async (f: File) => takeText(await f.text(), f.name);
 
   const apply = async (mode: ApplyMode) => {
     if (!parsed) {
@@ -114,7 +78,6 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: P
 
   return (
     <div
-      ref={boxRef}
       className={'import' + (dragging ? ' dragging' : '')}
       onDragOver={(e) => {
         e.preventDefault();
@@ -126,7 +89,7 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: P
         setDragging(false);
         const f = e.dataTransfer.files[0];
         if (f) readFile(f);
-        else handleClipboard(e.dataTransfer);
+        else if (e.dataTransfer.getData('text/plain')) takeText(e.dataTransfer.getData('text/plain'));
       }}
     >
       {payload ? (
@@ -143,10 +106,11 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: P
           spellCheck={false}
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
+            // Molfiles / RXN are kept out of the textarea.
             const raw = e.clipboardData.getData('text/plain');
-            if (STRUCTURED.has(detectFormat(raw)) || (!raw && handleClipboard(e.clipboardData))) {
+            if (STRUCTURED.has(detectFormat(raw))) {
               e.preventDefault();
-              if (raw) takeText(raw);
+              takeText(raw);
             }
           }}
           onKeyDown={(e) => {
@@ -176,12 +140,13 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: P
             {t.editEquation}
           </button>
         )}
+        <button className="ghost" onClick={onDraw}>✏️ {t.drawReaction}</button>
         <button className="ghost" onClick={() => fileRef.current?.click()}>{t.openFile}</button>
         <input
           ref={fileRef}
           type="file"
           hidden
-          accept=".cdxml,.cdx,.mol,.sdf,.sd,.rxn,.smi,.txt"
+          accept=".mol,.sdf,.sd,.rxn,.smi,.txt"
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) readFile(f);
@@ -189,14 +154,6 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply }: P
           }}
         />
       </div>
-      <details className="hint">
-        <summary>{t.chemdrawHowTo}</summary>
-        <ol>
-          {t.chemdrawSteps.map((s) => (
-            <li key={s}>{s}</li>
-          ))}
-        </ol>
-      </details>
       {message && <p className={message.kind === 'warn' ? 'warn' : 'ok'}>{message.text}</p>}
     </div>
   );

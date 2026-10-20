@@ -151,9 +151,9 @@ export function splitReactionSmiles(s: string): { reactants: string[]; agents: s
   return { reactants: split(parts[0]), agents: split(parts[1]), products: split(parts[2]) };
 }
 
-/** Split a name-based reaction "A + B -> C" (also →, =>, >>, =). */
+/** Split a name-based reaction "A + B -> C" (also →, =>). A bare "=" is not an arrow: SMILES use it. */
 export function splitNameReaction(s: string): { reactants: string[]; products: string[] } | null {
-  const m = /(.+?)(?:->|→|⟶|=>|>>|=)(.+)/.exec(s);
+  const m = /(.+?)(?:->|→|⟶|=>)(.+)/.exec(s);
   if (!m) return null;
   const list = (x: string) => x.split(/\s+\+\s*|\s*\+\s+|＋/).map((t) => t.trim()).filter(Boolean);
   return { reactants: list(m[1]), products: list(m[2]) };

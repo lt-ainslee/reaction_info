@@ -7,6 +7,7 @@ interface Labels {
   yield: string;
   actualMass: string;
   conditions: string;
+  liquid: string;
   notes: string;
 }
 
@@ -21,6 +22,9 @@ function rows(rxn: Reaction, u: Units, t: Labels): string[][] {
     if (c.form === 'solutionM' && c.molarity) notes.push(`${c.molarity} M`);
     if (c.form === 'solutionWt' && c.wtPercent) notes.push(`${c.wtPercent} wt%`);
     if (c.purity < 100 && c.form === 'neat') notes.push(`${c.purity}%`);
+    if (c.form === 'neat' && c.phase === 'liquid' && c.role !== 'product') {
+      notes.push(c.density ? `${t.liquid}, d = ${fmt(c.density)} g/mL` : t.liquid);
+    }
     if (c.role === 'solvent' && c.solventConc) notes.push(`${c.solventConc} M`);
     if (c.role === 'product' && v.mass !== undefined) {
       notes.push(`${t.actualMass} ${fmt(v.mass / MASS_UNITS[u.mass])} ${u.mass}`);

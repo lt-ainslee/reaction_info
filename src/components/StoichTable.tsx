@@ -1,6 +1,6 @@
 import {
-  compute, setEquiv, setMass, setMmol, setReference, setRole, setVolume, updateComponent,
-  type Component, type Form, type Reaction, type Role,
+  compute, needsDensity, setEquiv, setMass, setMmol, setReference, setRole, setVolume, updateComponent,
+  type Component, type Phase, type Reaction, type Role,
 } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from '../units';
@@ -13,12 +13,17 @@ interface Props {
   onChange: (r: Reaction) => void;
   onSelect: (id: string) => void;
   onRemove: (id: string) => void;
+  /** Compounds whose phase/density is being looked up. */
+  pending: ReadonlySet<string>;
 }
 
 const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent', 'product'];
-const FORMS: Form[] = ['neat', 'solutionM', 'solutionWt'];
+/** The form select combines phase (for neat compounds) and solution forms. */
+type FormChoice = 'neat' | Phase | 'solutionM' | 'solutionWt';
+const FORM_CHOICES: FormChoice[] = ['solid', 'liquid', 'gas', 'solutionM', 'solutionWt'];
+const formChoice = (c: Component): FormChoice => (c.form === 'neat' ? c.phase ?? 'neat' : c.form);
 
-export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove }: Props) {
+export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove, pending }: Props) {
   const { t } = useI18n();
   const inputs = rxn.components.filter((c) => c.role !== 'product');
   const products = rxn.components.filter((c) => c.role === 'product');
@@ -47,6 +52,7 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove 
     <td className="name-cell">
       <button className="link name" onClick={() => onSelect(c.id)}>{c.name}</button>
       {c.formula && <span className="formula">{c.formula}</span>}
+      {pending.has(c.id) && <span className="lookup">{t.lookingUp}</span>}
     </td>
   );
 
@@ -101,7 +107,18 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove 
                 <td>{solvent ? <span className="muted">—</span> : <FormCell c={c} up={up} />}</td>
                 <td>
                   {c.form === 'neat' || solvent ? (
-                    <NumInput value={c.density} onCommit={(density) => up(c.id, { density })} onClear={() => up(c.id, { density: undefined })} />
+                    <span className="density-cell">
+                      <NumInput
+                        value={c.density}
+                        className={needsDensity(c) && !pending.has(c.id) ? 'missing' : ''}
+                        placeholder={needsDensity(c) ? (pending.has(c.id) ? '…' : t.needDensity) : ''}
+                        onCommit={(density) => up(c.id, { density, densitySource: 'manual' })}
+                        onClear={() => up(c.id, { density: undefined, densitySource: undefined })}
+                      />
+                      {c.density && c.densitySource && c.densitySource !== 'manual' && (
+                        <small className="src" title={t.densitySourceTip}>{t.densitySources[c.densitySource]}</small>
+                      )}
+                    </span>
                   ) : (
                     <NumInput
                       value={c.solutionDensity}
@@ -156,11 +173,17 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove 
                   />
                 </td>
                 <td>
-                  <NumInput
-                    value={v.volume !== undefined ? v.volume / vl : undefined}
-                    placeholder={c.form === 'neat' && !solvent && !c.density ? '—' : ''}
-                    onCommit={(x) => onChange(setVolume(rxn, c.id, x * vl))}
-                  />
+                  {c.form === 'neat' && !solvent && (c.phase === 'solid' || c.phase === 'gas') ? (
+                    <span className="muted">—</span>
+                  ) : (
+                    <NumInput
+                      value={v.volume !== undefined ? v.volume / vl : undefined}
+                      className={c.form === 'neat' && c.phase === 'liquid' && !solvent ? 'dispense' : ''}
+                      title={c.phase === 'liquid' ? t.dispenseVolume : undefined}
+                      placeholder={needsDensity(c) ? t.needDensity : ''}
+                      onCommit={(x) => onChange(setVolume(rxn, c.id, x * vl))}
+                    />
+                  )}
                 </td>
                 {removeBtn(c)}
               </tr>
@@ -222,8 +245,17 @@ function FormCell({ c, up }: { c: Component; up: (id: string, p: Partial<Compone
   const { t } = useI18n();
   return (
     <span className="form-cell">
-      <select value={c.form} onChange={(e) => up(c.id, { form: e.target.value as Form })}>
-        {FORMS.map((f) => (
+      <select
+        value={formChoice(c)}
+        onChange={(e) => {
+          const v = e.target.value as FormChoice;
+          if (v === 'solutionM' || v === 'solutionWt') up(c.id, { form: v });
+          // Choosing liquid on a compound without density triggers a new lookup.
+          else if (v !== 'neat') up(c.id, { form: 'neat', phase: v, ...(v === 'liquid' && !c.density ? { lookup: undefined } : {}) });
+        }}
+      >
+        {formChoice(c) === 'neat' && <option value="neat">{t.forms.neat}</option>}
+        {FORM_CHOICES.map((f) => (
           <option key={f} value={f}>{t.forms[f]}</option>
         ))}
       </select>

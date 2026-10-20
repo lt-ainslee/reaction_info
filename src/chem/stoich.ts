@@ -10,6 +10,8 @@
 export type Role = 'reactant' | 'reagent' | 'catalyst' | 'solvent' | 'product';
 /** neat = pure solid/liquid; solutionM = molar solution; solutionWt = wt% solution (e.g. 37% HCl). */
 export type Form = 'neat' | 'solutionM' | 'solutionWt';
+/** Physical state of a neat compound at room temperature. */
+export type Phase = 'solid' | 'liquid' | 'gas';
 
 export interface Component {
   id: string;
@@ -22,6 +24,12 @@ export interface Component {
   mw?: number;
   /** Density of the neat compound, g/mL. */
   density?: number;
+  /** Where the density came from (shown next to the value). */
+  densitySource?: 'library' | 'pubchem' | 'manual';
+  /** State at room temperature; liquids are dispensed by volume. Unknown = undefined. */
+  phase?: Phase;
+  /** Result of the background PubChem lookup of phase/density (absent = not tried yet). */
+  lookup?: 'done' | 'failed';
   /** Purity / assay in %, default 100. */
   purity: number;
   form: Form;
@@ -89,7 +97,7 @@ export function amountToMassVolume(c: Component, mmol: number): { mass?: number;
     case 'neat': {
       if (!pos(mw)) return {};
       const mass = (mmol * mw) / (purityOf(c) / 100);
-      return { mass, volume: pos(c.density) ? mass / c.density : undefined };
+      return { mass, volume: byVolume(c) && pos(c.density) ? mass / c.density : undefined };
     }
     case 'solutionM': {
       if (!pos(c.molarity)) return {};
@@ -103,6 +111,13 @@ export function amountToMassVolume(c: Component, mmol: number): { mass?: number;
     }
   }
 }
+
+/** Neat solids and gases are not dispensed by volume. */
+const byVolume = (c: Component) => c.phase !== 'solid' && c.phase !== 'gas';
+
+/** A neat liquid whose volume can't be computed yet (density missing). */
+export const needsDensity = (c: Component) =>
+  c.role !== 'product' && c.form === 'neat' && c.phase === 'liquid' && !pos(c.density);
 
 function purityOf(c: Component) {
   return pos(c.purity) ? Math.min(c.purity, 100) : 100;
@@ -124,7 +139,7 @@ export function massToMmol(c: Component, mass: number): number | undefined {
 export function volumeToMmol(c: Component, volume: number): number | undefined {
   switch (c.form) {
     case 'neat':
-      return pos(c.density) ? massToMmol(c, volume * c.density) : undefined;
+      return byVolume(c) && pos(c.density) ? massToMmol(c, volume * c.density) : undefined;
     case 'solutionM':
       return pos(c.molarity) ? (volume / 1000) * c.molarity : undefined;
     case 'solutionWt':
