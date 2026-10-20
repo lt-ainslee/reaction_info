@@ -1,21 +1,21 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { useEffect, useState } from 'react';
 import { loadRDKit } from './chem/rdkit';
-import type { CompoundData } from './chem/resolve';
+import { compoundKey, type CompoundData, type Resolved } from './chem/resolve';
 import {
-  addComponent, emptyReaction, newComponent, planForProduct, removeComponent, scale, updateComponent,
+  addComponent, emptyReaction, mergeComponents, newComponent, planForProduct, removeComponent, scale, updateComponent,
   type Reaction, type Role,
 } from './chem/stoich';
 import { CompoundSearch } from './components/CompoundSearch';
 import { DetailPanel } from './components/DetailPanel';
 import { NumInput } from './components/NumInput';
-import { ReactionImport } from './components/ReactionImport';
+import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview } from './components/ReactionPreview';
 import { SavedMenu } from './components/SavedMenu';
 import { StoichTable } from './components/StoichTable';
 import { download, reactionSmiles, toCsv, toMarkdown } from './export';
 import { useI18n } from './i18n';
-import { loadCurrent, saveCurrent, saveReaction } from './storage';
+import { listSaved, loadCurrent, saveCurrent, saveReaction } from './storage';
 import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
 
 function loadUnits(): Units {
@@ -43,6 +43,12 @@ export default function App() {
   const [flash, setFlash] = useState<string | null>(null);
   const [planTarget, setPlanTarget] = useState<number | undefined>();
   const [planYield, setPlanYield] = useState<number | undefined>(80);
+  // Snapshot of the reaction as last saved, to show unsaved changes.
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => {
+    const entry = savedId ? listSaved().find((x) => x.id === savedId) : undefined;
+    return entry ? JSON.stringify(entry.reaction) : null;
+  });
+  const dirty = savedSnapshot === null ? rxn.components.length > 0 : JSON.stringify(rxn) !== savedSnapshot;
 
   useEffect(() => {
     loadRDKit().then(setRd, () => setRdError(true));
@@ -64,12 +70,34 @@ export default function App() {
   };
 
   const add = (data: CompoundData, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...data, role })));
-  const addMany = (items: { data: CompoundData; role: Role }[]) =>
-    setRxn((r) => items.reduce((acc, { data, role }) => addComponent(acc, newComponent({ ...data, role })), r));
+  const applyInput = (res: Resolved, mode: ApplyMode) =>
+    setRxn((r) => {
+      const explicitEquiv = new Set<string>();
+      const incoming = res.items.map(({ data, role, equiv }) => {
+        const c = newComponent({ ...data, role, ...(equiv ? { equiv } : {}) });
+        if (equiv) explicitEquiv.add(c.id);
+        return c;
+      });
+      const next = mergeComponents(r, incoming, (c) => compoundKey(rd, c), {
+        replace: mode === 'replace',
+        hasAgents: res.hasAgents,
+        explicitEquiv,
+      });
+      const cond = res.conditions.join(', ');
+      const conditions = !cond ? r.conditions : mode === 'replace' || !r.conditions ? cond : `${r.conditions}, ${cond}`;
+      return { ...next, conditions };
+    });
+
+  const save = (asNew: boolean) => {
+    const list = saveReaction(rxn, asNew ? undefined : savedId);
+    setSavedId(list[0].id);
+    setSavedSnapshot(JSON.stringify(rxn));
+    notify(t.savedState + ' ✓');
+  };
 
   const selectedC = rxn.components.find((c) => c.id === selected);
   const product = rxn.components.find((c) => c.role === 'product');
-  const exportLabels = { roles: t.roles, col: t.col, yield: t.yield, actualMass: t.actualMass, notes: t.notes };
+  const exportLabels = { roles: t.roles, col: t.col, yield: t.yield, actualMass: t.actualMass, conditions: t.conditions, notes: t.notes };
   const fileBase = (rxn.title || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
 
   return (
@@ -81,17 +109,27 @@ export default function App() {
         </div>
         <div className="top-actions no-print">
           <SavedMenu
+            currentId={savedId}
             onLoad={(s) => {
               setRxn(s.reaction);
               setSavedId(s.id);
+              setSavedSnapshot(JSON.stringify(s.reaction));
               setSelected(null);
+            }}
+            onDeleted={(id) => {
+              if (id === savedId) {
+                setSavedId(undefined);
+                setSavedSnapshot(null);
+              }
             }}
           />
           <button
             className="ghost"
             onClick={() => {
+              if (dirty && !confirm(t.unsaved + ' — ' + t.newReaction + '?')) return;
               setRxn(emptyReaction());
               setSavedId(undefined);
+              setSavedSnapshot(null);
               setSelected(null);
             }}
           >
@@ -114,20 +152,26 @@ export default function App() {
               aria-label={t.reactionTitle}
               onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
             />
-            <button
-              className="no-print"
-              onClick={() => {
-                const list = saveReaction(rxn, savedId);
-                setSavedId(list[0].id);
-                notify(t.save + ' ✓');
-              }}
-            >
+            <span className={'save-state no-print ' + (dirty ? 'dirty' : '')}>
+              {dirty ? t.unsaved : savedId ? t.savedState : ''}
+            </span>
+            <button className="no-print" onClick={() => save(false)} disabled={!dirty && !!savedId}>
               {t.save}
             </button>
+            {savedId && (
+              <button className="ghost no-print" onClick={() => save(true)}>
+                {t.saveAs}
+              </button>
+            )}
           </div>
           <div className="no-print">
             <h2>{t.importLabel}</h2>
-            <ReactionImport rd={rd} onImport={addMany} />
+            <ReactionInput
+              rd={rd}
+              hasComponents={rxn.components.length > 0}
+              currentEquation={() => reactionSmiles(rxn)}
+              onApply={applyInput}
+            />
             <h2>{t.addCompound}</h2>
             <CompoundSearch rd={rd} onAdd={add} />
           </div>
@@ -191,6 +235,14 @@ export default function App() {
                 </button>
               </div>
             )}
+            <label className="field notes">
+              <span>{t.conditions}</span>
+              <input
+                value={rxn.conditions ?? ''}
+                placeholder={t.conditionsPh}
+                onChange={(e) => setRxn({ ...rxn, conditions: e.target.value })}
+              />
+            </label>
             <label className="field notes">
               <span>{t.notes}</span>
               <textarea rows={3} value={rxn.notes ?? ''} onChange={(e) => setRxn({ ...rxn, notes: e.target.value })} />

@@ -96,6 +96,10 @@ export const LIBRARY: LibraryEntry[] = [
   { en: 'Copper(I) iodide', zh: '碘化亚铜', aliases: ['CuI'], formula: 'CuI', cas: '7681-65-4', smiles: '[Cu]I' },
 ];
 
+// Entries in the "Solvents" block above, used to guess roles of pasted agents.
+const SOLVENT_COUNT = LIBRARY.findIndex((e) => e.en === 'Triethylamine');
+export const isLibrarySolvent = (e: LibraryEntry) => LIBRARY.indexOf(e) < SOLVENT_COUNT;
+
 const norm = (s: string) => s.toLowerCase().replace(/[\s()（）,，\-·.]/g, '');
 
 export function searchLibrary(query: string, limit = 8): LibraryEntry[] {

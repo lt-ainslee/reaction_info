@@ -1,7 +1,9 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { useEffect, useState } from 'react';
 import { getDetailsCached, pubchemUrl, searchByName, searchBySmiles, type PubChemDetails } from '../chem/pubchem';
-import { smilesToSvg } from '../chem/rdkit';
+import { formulaMass } from '../chem/formula';
+import { parseInputText } from '../chem/parseInput';
+import { isValidSmiles, smilesInfo, smilesToSvg } from '../chem/rdkit';
 import type { Component } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { fmt } from '../units';
@@ -30,6 +32,30 @@ export function DetailPanel({ c, rd, onUpdate, onClose }: Props) {
   const [details, setDetails] = useState<PubChemDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [structure, setStructure] = useState(c.smiles ?? '');
+  const [structMsg, setStructMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  /** Accept a SMILES, or a pasted ChemDraw molfile / CDXML (first structure). */
+  const applyStructure = () => {
+    if (!rd) return;
+    const raw = structure.trim();
+    let smiles: string | undefined;
+    if (raw && isValidSmiles(rd, raw) && !/\s/.test(raw)) smiles = raw;
+    else {
+      const p = parseInputText(rd, raw);
+      const all = p ? [...p.molecules, ...p.reactants, ...p.products, ...p.agents] : [];
+      smiles = all.find((x) => x.smiles)?.smiles;
+    }
+    const info = smiles ? smilesInfo(rd, smiles) : null;
+    if (!smiles || !info) {
+      setStructMsg({ ok: false, text: t.structureInvalid });
+      return;
+    }
+    setStructure(smiles);
+    // A new structure invalidates the PubChem record of the old one.
+    onUpdate({ smiles, formula: info.formula, mw: info.mw, cid: undefined });
+    setStructMsg({ ok: true, text: t.structureUpdated });
+  };
 
   useEffect(() => {
     setDetails(null);
@@ -79,19 +105,50 @@ export function DetailPanel({ c, rd, onUpdate, onClose }: Props) {
         <input value={c.name} onChange={(e) => onUpdate({ name: e.target.value })} />
       </label>
       {svg && <img className="panel-mol" alt={c.name} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} />}
+      <label className="field">
+        <span>{t.structure}</span>
+        <textarea
+          className="mono"
+          rows={2}
+          value={structure}
+          placeholder={t.structurePh}
+          spellCheck={false}
+          onChange={(e) => {
+            setStructure(e.target.value);
+            setStructMsg(null);
+          }}
+        />
+      </label>
+      <div className="row">
+        <button className="small" onClick={applyStructure} disabled={!rd || !structure.trim() || structure.trim() === c.smiles}>
+          {t.updateStructure}
+        </button>
+        {structMsg && <span className={structMsg.ok ? 'ok small' : 'warn small'}>{structMsg.text}</span>}
+      </div>
       <dl>
         <dt>{t.formula}</dt>
-        <dd>{c.formula ?? '—'}</dd>
+        <dd>
+          <input
+            key={c.formula ?? ''}
+            defaultValue={c.formula ?? ''}
+            onBlur={(e) => {
+              const formula = e.target.value.trim();
+              if (formula === (c.formula ?? '')) return;
+              const mw = formulaMass(formula);
+              onUpdate(mw ? { formula, mw } : { formula: formula || undefined });
+            }}
+          />
+        </dd>
         <dt>{t.col.mw}</dt>
         <dd>{fmt(c.mw, 6) || '—'}</dd>
         <dt>CAS</dt>
-        <dd>{c.cas ?? details?.cas ?? '—'}</dd>
-        {c.smiles && (
-          <>
-            <dt>SMILES</dt>
-            <dd className="mono break">{c.smiles}</dd>
-          </>
-        )}
+        <dd>
+          <input
+            key={c.cas ?? details?.cas ?? ''}
+            defaultValue={c.cas ?? details?.cas ?? ''}
+            onBlur={(e) => e.target.value.trim() !== (c.cas ?? '') && onUpdate({ cas: e.target.value.trim() || undefined })}
+          />
+        </dd>
         {c.cid && (
           <>
             <dt>PubChem</dt>

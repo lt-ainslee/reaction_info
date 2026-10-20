@@ -6,6 +6,7 @@ interface Labels {
   col: { name: string; role: string; mw: string; equiv: string; amount: string; mass: string; volume: string };
   yield: string;
   actualMass: string;
+  conditions: string;
   notes: string;
 }
 
@@ -48,6 +49,7 @@ export function toMarkdown(rxn: Reaction, u: Units, t: Labels): string {
   const line = (r: string[]) => `| ${r.map(esc).join(' | ')} |`;
   const out = [];
   if (rxn.title) out.push(`### ${rxn.title}`, '');
+  if (rxn.conditions?.trim()) out.push(`${t.conditions}: ${rxn.conditions.trim()}`, '');
   out.push(line(header), line(header.map(() => '---')), ...body.map(line));
   if (rxn.notes?.trim()) out.push('', rxn.notes.trim());
   return out.join('\n');

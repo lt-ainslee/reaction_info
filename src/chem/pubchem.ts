@@ -82,6 +82,16 @@ export async function searchBySmiles(smiles: string): Promise<PubChemHit[]> {
   return (await readProps(res)).filter((h) => h.cid > 0);
 }
 
+/** Lookup by InChI (POST). */
+export async function searchByInchi(inchi: string): Promise<PubChemHit[]> {
+  const res = await throttledFetch(`${REST}/compound/inchi/property/${PROPS}/JSON`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ inchi }),
+  });
+  return (await readProps(res)).filter((h) => h.cid > 0);
+}
+
 // ---- PUG View (experimental properties, safety) ----
 
 interface Markup { Type?: string; Extra?: string }

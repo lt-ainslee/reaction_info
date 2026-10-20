@@ -46,6 +46,8 @@ export interface Reaction {
   /** Amount of the reference compound, mmol. */
   refMmol: number;
   components: Component[];
+  /** Free-text conditions, e.g. "90 °C, 12 h, N2". */
+  conditions?: string;
   notes?: string;
 }
 
@@ -242,6 +244,55 @@ export function removeComponent(rxn: Reaction, id: string): Reaction {
   if (rxn.refId !== id) return { ...rxn, components };
   const next = components.find((c) => c.role === 'reactant' || c.role === 'reagent');
   return next ? setReference({ ...rxn, components }, next.id) : { ...rxn, components, refId: null };
+}
+
+const AGENT_ROLES: Role[] = ['reagent', 'catalyst', 'solvent'];
+
+/**
+ * Add compounds, or (replace = true) update the reaction to a new equation.
+ * When replacing, compounds that match an existing one by `key` keep their
+ * data (amount, form, purity…); unmatched reactants/products are dropped, and
+ * existing agents are dropped only if the new input lists agents itself and
+ * the agent has a structure to compare (text-only catalysts like Pd(PPh3)4
+ * typed by hand are kept).
+ */
+export function mergeComponents(
+  rxn: Reaction,
+  incoming: Component[],
+  key: (c: Component) => string,
+  /** explicitEquiv: ids of incoming compounds whose equiv was given in the input (e.g. "2 equiv"). */
+  opts: { replace: boolean; hasAgents: boolean; explicitEquiv?: Set<string> },
+): Reaction {
+  if (!opts.replace) return incoming.reduce(addComponent, rxn);
+
+  const pool = new Map<string, Component[]>();
+  for (const c of rxn.components) pool.set(key(c), [...(pool.get(key(c)) ?? []), c]);
+
+  const result: Component[] = [];
+  const kept = new Set<string>();
+  for (const inc of incoming) {
+    const match = pool.get(key(inc))?.find((c) => !kept.has(c.id));
+    if (match) {
+      kept.add(match.id);
+      const equiv = opts.explicitEquiv?.has(inc.id) ? inc.equiv : match.equiv;
+      result.push({ ...match, role: inc.role, equiv });
+    } else result.push(inc);
+  }
+  for (const c of rxn.components) {
+    if (kept.has(c.id)) continue;
+    const keep = AGENT_ROLES.includes(c.role) && (!opts.hasAgents || !c.smiles);
+    if (keep) result.push(c);
+  }
+
+  let next: Reaction = { ...rxn, components: result };
+  const ref = result.find((c) => c.id === rxn.refId);
+  if (!ref || ref.role === 'solvent' || ref.role === 'product') {
+    const candidate = result.find((c) => c.role === 'reactant') ?? result.find((c) => c.role === 'reagent');
+    next = candidate
+      ? { ...next, refId: candidate.id, components: result.map((c) => (c.id === candidate.id ? { ...c, equiv: 1 } : c)) }
+      : { ...next, refId: null };
+  }
+  return next;
 }
 
 export function newComponent(p: Partial<Component> & { name: string; role: Role }): Component {
