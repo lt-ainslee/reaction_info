@@ -232,3 +232,8 @@ input.num.dispense { font-weight: 700; border-color: var(--accent); background: 
 
 .saved-where { margin: 0 0 6px; }
 .saved-footer { display: flex; align-items: center; gap: 8px; padding-top: 8px; }
+
+.smiles-details { margin-top: 6px; }
+.smiles-details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.smiles-details p { margin: 4px 0 0; }
+.import .smiles-edit { font-size: 12px; margin-left: 4px; }

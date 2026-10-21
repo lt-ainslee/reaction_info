@@ -172,3 +172,26 @@ describe('phase', () => {
     expect(needsDensity({ ...c, phase: 'solid' })).toBe(false);
   });
 });
+
+describe('mergeComponents with structural input', () => {
+  const key = (c: { smiles?: string; name: string }) => c.smiles ?? c.name;
+  const base = () => {
+    let r = emptyReaction();
+    r = addComponent(r, newComponent({ id: 'a', name: 'A', role: 'reactant', smiles: 'CCO' }));
+    r = addComponent(r, newComponent({ id: 'm', name: 'Manual', role: 'reactant', mw: 50, equiv: 2 }));
+    r = addComponent(r, newComponent({ id: 'p', name: 'P', role: 'product', smiles: 'CC=O' }));
+    return r;
+  };
+
+  it('keeps compounds without structure when a drawing replaces the equation', () => {
+    const incoming = [newComponent({ name: 'A2', role: 'reactant', smiles: 'CCO' }), newComponent({ name: 'Q', role: 'product', smiles: 'CC(=O)O' })];
+    const m = mergeComponents(base(), incoming, key, { replace: true, hasAgents: false });
+    expect(m.components.map((c) => c.name)).toEqual(['A', 'Q', 'Manual']);
+    expect(m.components.find((c) => c.name === 'Manual')!.equiv).toBe(2);
+  });
+
+  it('still drops them for name-based input', () => {
+    const m = mergeComponents(base(), [newComponent({ name: 'A', role: 'reactant' })], key, { replace: true, hasAgents: false });
+    expect(m.components.map((c) => c.name)).toEqual(['A']);
+  });
+});

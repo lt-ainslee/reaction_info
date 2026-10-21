@@ -15,7 +15,7 @@ import { ReactionPreview } from './components/ReactionPreview';
 import { SavedMenu } from './components/SavedMenu';
 import type { StructureEditorProps } from './components/StructureEditor';
 import { StoichTable } from './components/StoichTable';
-import { download, reactionSmiles, toCsv, toMarkdown } from './export';
+import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from './export';
 import { useI18n } from './i18n';
 import { listSaved, loadCurrent, reactionToFile, saveCurrent, saveReaction } from './storage';
 import { useAutoLookup } from './useAutoLookup';
@@ -220,7 +220,8 @@ export default function App() {
               onDraw={() =>
                 openEditor({
                   mode: 'reaction',
-                  initial: rxn.components.some((c) => c.smiles) ? reactionSmiles(rxn) : undefined,
+                  initial: drawableEquation(rxn),
+                  editing: rxn.components.length > 0,
                   onApply: importDrawing,
                 })
               }
@@ -233,7 +234,12 @@ export default function App() {
         <section className="card">
           <h2>{t.preview}</h2>
           <ReactionPreview rxn={rxn} rd={rd} rdError={rdError} onSelect={setSelected} />
-          {rxn.components.some((c) => c.smiles) && <p className="mono small muted break">{reactionSmiles(rxn)}</p>}
+          {rxn.components.some((c) => c.smiles) && (
+            <details className="smiles-details">
+              <summary>SMILES</summary>
+              <p className="mono small muted break">{reactionSmiles(rxn)}</p>
+            </details>
+          )}
         </section>
 
         {rxn.components.length > 0 && (
