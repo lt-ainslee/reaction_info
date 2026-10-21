@@ -19,7 +19,7 @@ export function ReactionPreview({ rxn, rd, rdError, onSelect }: Props) {
   const below = by(['solvent']);
   const right = by(['product']);
 
-  if (!rxn.components.length) return <p className="muted center">{t.previewEmpty}</p>;
+  if (!rxn.components.length && !rxn.conditions) return <p className="muted center">{t.previewEmpty}</p>;
 
   const side = (list: Component[]) =>
     list.map((c, i) => (
@@ -51,6 +51,7 @@ export function ReactionPreview({ rxn, rd, rdError, onSelect }: Props) {
             {below.map((c) => (
               <button key={c.id} className="link" onClick={() => onSelect(c.id)}>{c.name}</button>
             ))}
+            {rxn.conditions && <span className="conditions">{rxn.conditions}</span>}
           </div>
         </div>
         {side(right)}

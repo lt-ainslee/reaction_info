@@ -1,7 +1,8 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { useState } from 'react';
 import { libraryToComponent } from '../chem/library';
-import { hitToData, searchAll, smilesToData, type CompoundData, type SearchResults } from '../chem/resolve';
+import { hitToData, resolveOne, searchAll, smilesToData, type CompoundData, type SearchResults } from '../chem/resolve';
+import type { OpenEditor } from '../App';
 import { formulaMass } from '../chem/formula';
 import type { Role } from '../chem/stoich';
 import { useI18n } from '../i18n';
@@ -12,9 +13,10 @@ const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent', 'product'];
 interface Props {
   rd: MainModule | null;
   onAdd: (data: CompoundData, role: Role) => void;
+  openEditor: OpenEditor;
 }
 
-export function CompoundSearch({ rd, onAdd }: Props) {
+export function CompoundSearch({ rd, onAdd, openEditor }: Props) {
   const { t, lang } = useI18n();
   const [q, setQ] = useState('');
   const [role, setRole] = useState<Role>('reactant');
@@ -70,6 +72,20 @@ export function CompoundSearch({ rd, onAdd }: Props) {
           onKeyDown={(e) => e.key === 'Enter' && run()}
         />
         <button onClick={run} disabled={busy}>{busy ? t.searching : t.search}</button>
+        <button
+          className="ghost"
+          onClick={() =>
+            openEditor({
+              mode: 'molecule',
+              onApply: async ({ text }) => {
+                const d = (await resolveOne(text, rd, lang)) ?? (rd ? smilesToData(rd, text, undefined, lang) : null);
+                if (d) onAdd(d, role);
+              },
+            })
+          }
+        >
+          ✏️ {t.draw}
+        </button>
         <button className="ghost" onClick={() => setManual((m) => !m)}>{t.manualAdd}</button>
       </div>
 

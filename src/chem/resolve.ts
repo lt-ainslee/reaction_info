@@ -1,8 +1,9 @@
 import type { MainModule } from '@rdkit/rdkit';
-import { exactLibraryMatch, LIBRARY, libraryToComponent, searchLibrary, type LibraryEntry } from './library';
-import { isCas, searchByName, searchBySmiles, type PubChemHit } from './pubchem';
+import { exactLibraryMatch, isLibrarySolvent, LIBRARY, libraryToComponent, searchLibrary, type LibraryEntry } from './library';
+import { parseAgentText, type ParsedInput, type Species } from './parseInput';
+import { isCas, searchByInchi, searchByName, searchBySmiles, type PubChemHit } from './pubchem';
 import { isValidSmiles, smilesInfo } from './rdkit';
-import type { Component } from './stoich';
+import type { Component, Role } from './stoich';
 
 export type CompoundData = Omit<Component, 'id' | 'role' | 'equiv'>;
 
@@ -118,42 +119,99 @@ export async function resolveOne(q: string, rd: MainModule | null, lang: 'zh' | 
   }
   if (hasCjk(q)) return null;
   try {
-    const [hit] = await searchByName(q);
+    const [hit] = q.trim().startsWith('InChI=') ? await searchByInchi(q.trim()) : await searchByName(q);
     return hit ? hitToData(hit, rd, lang) : null;
   } catch {
     return null;
   }
 }
 
-/** Split a reaction SMILES "A.B>C>D" (or "A.B>>D"). Parenthesised groups stay together. */
-export function splitReactionSmiles(s: string): { reactants: string[]; agents: string[]; products: string[] } | null {
-  const parts = s.trim().split('>');
-  if (parts.length !== 3) return null;
-  const split = (p: string) => {
-    const out: string[] = [];
-    let depth = 0;
-    let cur = '';
-    for (const ch of p) {
-      if (ch === '(') depth++;
-      if (ch === ')') depth--;
-      if (ch === '.' && depth === 0) {
-        out.push(cur);
-        cur = '';
-      } else cur += ch;
-    }
-    out.push(cur);
-    return out
-      .map((x) => x.trim())
-      .filter(Boolean)
-      .map((x) => (x.startsWith('(') && x.endsWith(')') ? x.slice(1, -1) : x));
-  };
-  return { reactants: split(parts[0]), agents: split(parts[1]), products: split(parts[2]) };
+// ---- resolving parsed input (paste / file / text) ----
+
+export interface ResolvedItem { data: CompoundData; role: Role; equiv?: number }
+
+export interface Resolved {
+  items: ResolvedItem[];
+  /** Reaction conditions found in arrow text (temperature, time, atmosphere, unknown labels). */
+  conditions: string[];
+  failed: string[];
+  /** The input described agents (reagents/catalysts/solvents) explicitly. */
+  hasAgents: boolean;
 }
 
-/** Split a name-based reaction "A + B -> C" (also →, =, >>). */
-export function splitNameReaction(s: string): { reactants: string[]; products: string[] } | null {
-  const m = /(.+?)(?:->|→|⟶|=>|>>|=)(.+)/.exec(s);
-  if (!m) return null;
-  const list = (x: string) => x.split(/\s+\+\s*|\s*\+\s+|＋/).map((t) => t.trim()).filter(Boolean);
-  return { reactants: list(m[1]), products: list(m[2]) };
+const CATALYST_METALS = /(Pd|Pt|Rh|Ru|Ir|Au|Os)(?![a-z])/;
+
+function guessAgentRole(rd: MainModule | null, d: CompoundData, molPercent: boolean): Role {
+  if (molPercent) return 'catalyst';
+  const lib = (d.cas && LIBRARY.find((e) => e.cas === d.cas)) || (rd && d.smiles ? libraryBySmiles(rd, d.smiles) : undefined);
+  if (lib && isLibrarySolvent(lib)) return 'solvent';
+  if (d.formula && CATALYST_METALS.test(d.formula)) return 'catalyst';
+  return 'reagent';
+}
+
+export async function resolveParsed(
+  p: ParsedInput,
+  rd: MainModule | null,
+  lang: 'zh' | 'en',
+  defaultRole: Role = 'reactant',
+): Promise<Resolved> {
+  const out: Resolved = { items: [], conditions: [], failed: [], hasAgents: p.agents.length > 0 };
+
+  const one = async (s: Species) => {
+    const q = s.smiles ?? s.text ?? '';
+    const d = await resolveOne(q, rd, lang);
+    if (!d) out.failed.push(q);
+    return d;
+  };
+
+  for (const [list, role] of [[p.reactants, 'reactant'], [p.molecules, defaultRole]] as const) {
+    for (const s of list) {
+      const d = await one(s);
+      if (d) out.items.push({ data: d, role });
+    }
+  }
+
+  for (const s of p.agents) {
+    if (s.smiles) {
+      const d = await one(s);
+      if (d) out.items.push({ data: d, role: guessAgentRole(rd, d, false) });
+      continue;
+    }
+    for (const tok of parseAgentText(s.text ?? '')) {
+      if (tok.condition) {
+        out.conditions.push(tok.condition);
+        continue;
+      }
+      const name = tok.name!;
+      let found = await resolveOne(name, rd, lang).then((d) => (d ? [d] : []));
+      // "THF/H2O", "dioxane/water" → several solvents (but not "Pd/C").
+      if (!found.length && name.includes('/')) {
+        const parts = await Promise.all(name.split('/').map((x) => resolveOne(x.trim(), rd, lang)));
+        if (parts.every(Boolean)) found = parts as CompoundData[];
+      }
+      if (!found.length) {
+        out.conditions.push(name);
+        continue;
+      }
+      for (const d of found) {
+        const role = guessAgentRole(rd, d, !!tok.molPercent);
+        out.items.push({ data: d, role, equiv: role === 'solvent' ? undefined : tok.equiv });
+      }
+    }
+  }
+
+  for (const s of p.products) {
+    const d = await one(s);
+    if (d) out.items.push({ data: d, role: 'product' });
+  }
+  return out;
+}
+
+/** Key used to match pasted compounds with existing ones when updating a reaction. */
+export function compoundKey(rd: MainModule | null, c: { smiles?: string; name: string; cas?: string }): string {
+  if (rd && c.smiles) {
+    const can = canonical(rd, c.smiles);
+    if (can) return 'smi:' + can;
+  }
+  return c.cas ? 'cas:' + c.cas : 'name:' + c.name.trim().toLowerCase();
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addComponent, compute, emptyReaction, newComponent, planForProduct, removeComponent, scale,
-  setMass, setMmol, setReference, setRole, setVolume, type Reaction,
+  addComponent, compute, emptyReaction, mergeComponents, newComponent, planForProduct, removeComponent, scale,
+  needsDensity, setMass, setMmol, setReference, setRole, setVolume, updateComponent, type Reaction,
 } from './stoich';
 
 // Fischer esterification-like setup: benzoic acid (ref), MeOH (neat liquid),
@@ -111,5 +111,64 @@ describe('scaling clears stale results', () => {
     const r = setMass(build(), 'p', 1000);
     expect(get(scale(r, 2), 'p').mass).toBeUndefined();
     expect(get(planForProduct(r, 'p', 1361.5, 50), 'p').mass).toBeUndefined();
+  });
+});
+
+describe('mergeComponents', () => {
+  const key = (c: { name: string }) => c.name;
+  it('keeps data of matching compounds and drops removed reactants', () => {
+    const r = build();
+    const incoming = [
+      newComponent({ name: 'PhCOOH', role: 'reactant' }),
+      newComponent({ name: 'EtOH', role: 'reactant', mw: 46.07 }),
+      newComponent({ name: 'Ester', role: 'product' }),
+    ];
+    const m = mergeComponents(r, incoming, key, { replace: true, hasAgents: false });
+    const names = m.components.map((c) => c.name);
+    expect(names).toEqual(['PhCOOH', 'EtOH', 'Ester', 'BuLi', 'HCl', 'Pd', 'THF']);
+    expect(m.refId).toBe('a');
+    expect(m.components.find((c) => c.name === 'PhCOOH')!.id).toBe('a');
+  });
+
+  it('picks a new reference when the old one disappears', () => {
+    const m = mergeComponents(build(), [newComponent({ name: 'X', role: 'reactant', equiv: 3 })], key, { replace: true, hasAgents: false });
+    expect(m.components.find((c) => c.id === m.refId)!.name).toBe('X');
+    expect(m.components.find((c) => c.id === m.refId)!.equiv).toBe(1);
+  });
+
+  it('appends in add mode', () => {
+    const m = mergeComponents(build(), [newComponent({ name: 'X', role: 'reagent' })], key, { replace: false, hasAgents: false });
+    expect(m.components).toHaveLength(8);
+  });
+});
+
+describe('mergeComponents equiv', () => {
+  it('overrides equiv only when given explicitly', () => {
+    const key = (c: { name: string }) => c.name;
+    const ref = newComponent({ name: 'PhCOOH', role: 'reactant' });
+    const inc = newComponent({ name: 'MeOH', role: 'reactant', equiv: 5 });
+    const a = mergeComponents(build(), [ref, inc], key, { replace: true, hasAgents: false });
+    expect(a.components.find((c) => c.name === 'MeOH')!.equiv).toBe(2);
+    const b = mergeComponents(build(), [ref, inc], key, { replace: true, hasAgents: false, explicitEquiv: new Set([inc.id]) });
+    expect(b.components.find((c) => c.name === 'MeOH')!.equiv).toBe(5);
+  });
+});
+
+describe('phase', () => {
+  it('gives volumes for liquids and unknown phase, not for solids', () => {
+    let r = build();
+    expect(get(r, 'b').volume).toBeDefined(); // MeOH, phase unknown, has density
+    r = updateComponent(r, 'b', { phase: 'liquid' });
+    expect(get(r, 'b').volume).toBeCloseTo((20 * 32.04) / 0.792);
+    r = updateComponent(r, 'b', { phase: 'solid' });
+    expect(get(r, 'b').volume).toBeUndefined();
+    expect(setVolume(r, 'b', 100)).toBe(r);
+  });
+
+  it('flags liquids without density', () => {
+    const c = newComponent({ name: 'X', role: 'reactant', phase: 'liquid' });
+    expect(needsDensity(c)).toBe(true);
+    expect(needsDensity({ ...c, density: 1 })).toBe(false);
+    expect(needsDensity({ ...c, phase: 'solid' })).toBe(false);
   });
 });

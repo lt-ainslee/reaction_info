@@ -10,6 +10,7 @@
   --missing: #fff1e5;
   --ref: #f0f7ff;
   --mol-bg: #ffffff;
+  --ok: #1a7f37;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,6 +26,7 @@
     --missing: #3d2a12;
     --ref: #12263f;
     --mol-bg: #f6f8fa;
+    --ok: #3fb950;
     color-scheme: dark;
   }
 }
@@ -48,6 +50,7 @@ h4 { margin: 10px 0 4px; font-size: 13px; color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .break { word-break: break-all; }
 .warn { color: var(--warn); margin: 6px 0; }
+.ok { color: var(--ok); margin: 6px 0; }
 .hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
 .strong { font-weight: 600; }
 
@@ -178,3 +181,38 @@ footer { text-align: center; padding: 8px 0 24px; }
   table.stoich { min-width: 0; }
   input, select, textarea { border: 0; background: none; padding: 0; appearance: none; }
 }
+
+/* Import box */
+.import { border: 1px dashed transparent; border-radius: 8px; transition: border-color .15s, background .15s; }
+.import.dragging { border-color: var(--accent); background: var(--accent-soft); }
+.import textarea { width: 100%; resize: vertical; margin-bottom: 4px; }
+.import .row { margin-top: 6px; }
+.import details { margin-top: 6px; }
+.import details summary { cursor: pointer; color: var(--accent); }
+.import details ol { margin: 6px 0 0; padding-left: 20px; }
+.payload { display: flex; align-items: center; gap: 6px; padding: 8px; border: 1px solid var(--border); border-radius: 6px; }
+.chip { background: var(--accent-soft); border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+.conditions { flex-basis: 100%; text-align: center; color: var(--muted); }
+.save-state { font-size: 12px; color: var(--muted); }
+.save-state.dirty { color: var(--warn); }
+.saved-item.current { background: var(--accent-soft); border-radius: 6px; padding-left: 6px; }
+.panel textarea { width: 100%; resize: vertical; }
+.panel dd input { width: 100%; padding: 3px 6px; }
+.panel .row { margin: 6px 0 4px; }
+.field.notes + .field.notes { margin-top: 10px; }
+
+/* Structure editor modal */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.modal { background: var(--card); border-radius: 10px; box-shadow: 0 12px 40px rgba(0,0,0,.3); display: flex; flex-direction: column; max-width: 100%; max-height: 100%; }
+.editor-modal { width: min(1200px, 100%); height: min(780px, 100%); }
+.modal header, .modal footer { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+.modal header h3 { margin: 0; white-space: nowrap; }
+.editor-host { position: relative; flex: 1; min-height: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: #fff; color: #333; }
+.editor-host > div { height: 100%; }
+.editor-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; z-index: 1; }
+
+/* Phase / density */
+.lookup { display: block; font-size: 11px; color: var(--accent); }
+.density-cell { display: inline-flex; flex-direction: column; align-items: flex-end; }
+.density-cell .src { font-size: 10px; color: var(--muted); margin-top: 1px; }
+input.num.dispense { font-weight: 700; border-color: var(--accent); background: var(--accent-soft); }

@@ -10,6 +10,8 @@
 export type Role = 'reactant' | 'reagent' | 'catalyst' | 'solvent' | 'product';
 /** neat = pure solid/liquid; solutionM = molar solution; solutionWt = wt% solution (e.g. 37% HCl). */
 export type Form = 'neat' | 'solutionM' | 'solutionWt';
+/** Physical state of a neat compound at room temperature. */
+export type Phase = 'solid' | 'liquid' | 'gas';
 
 export interface Component {
   id: string;
@@ -22,6 +24,12 @@ export interface Component {
   mw?: number;
   /** Density of the neat compound, g/mL. */
   density?: number;
+  /** Where the density came from (shown next to the value). */
+  densitySource?: 'library' | 'pubchem' | 'manual';
+  /** State at room temperature; liquids are dispensed by volume. Unknown = undefined. */
+  phase?: Phase;
+  /** Result of the background PubChem lookup of phase/density (absent = not tried yet). */
+  lookup?: 'done' | 'failed';
   /** Purity / assay in %, default 100. */
   purity: number;
   form: Form;
@@ -46,6 +54,8 @@ export interface Reaction {
   /** Amount of the reference compound, mmol. */
   refMmol: number;
   components: Component[];
+  /** Free-text conditions, e.g. "90 °C, 12 h, N2". */
+  conditions?: string;
   notes?: string;
 }
 
@@ -87,7 +97,7 @@ export function amountToMassVolume(c: Component, mmol: number): { mass?: number;
     case 'neat': {
       if (!pos(mw)) return {};
       const mass = (mmol * mw) / (purityOf(c) / 100);
-      return { mass, volume: pos(c.density) ? mass / c.density : undefined };
+      return { mass, volume: byVolume(c) && pos(c.density) ? mass / c.density : undefined };
     }
     case 'solutionM': {
       if (!pos(c.molarity)) return {};
@@ -101,6 +111,13 @@ export function amountToMassVolume(c: Component, mmol: number): { mass?: number;
     }
   }
 }
+
+/** Neat solids and gases are not dispensed by volume. */
+const byVolume = (c: Component) => c.phase !== 'solid' && c.phase !== 'gas';
+
+/** A neat liquid whose volume can't be computed yet (density missing). */
+export const needsDensity = (c: Component) =>
+  c.role !== 'product' && c.form === 'neat' && c.phase === 'liquid' && !pos(c.density);
 
 function purityOf(c: Component) {
   return pos(c.purity) ? Math.min(c.purity, 100) : 100;
@@ -122,7 +139,7 @@ export function massToMmol(c: Component, mass: number): number | undefined {
 export function volumeToMmol(c: Component, volume: number): number | undefined {
   switch (c.form) {
     case 'neat':
-      return pos(c.density) ? massToMmol(c, volume * c.density) : undefined;
+      return byVolume(c) && pos(c.density) ? massToMmol(c, volume * c.density) : undefined;
     case 'solutionM':
       return pos(c.molarity) ? (volume / 1000) * c.molarity : undefined;
     case 'solutionWt':
@@ -242,6 +259,55 @@ export function removeComponent(rxn: Reaction, id: string): Reaction {
   if (rxn.refId !== id) return { ...rxn, components };
   const next = components.find((c) => c.role === 'reactant' || c.role === 'reagent');
   return next ? setReference({ ...rxn, components }, next.id) : { ...rxn, components, refId: null };
+}
+
+const AGENT_ROLES: Role[] = ['reagent', 'catalyst', 'solvent'];
+
+/**
+ * Add compounds, or (replace = true) update the reaction to a new equation.
+ * When replacing, compounds that match an existing one by `key` keep their
+ * data (amount, form, purity…); unmatched reactants/products are dropped, and
+ * existing agents are dropped only if the new input lists agents itself and
+ * the agent has a structure to compare (text-only catalysts like Pd(PPh3)4
+ * typed by hand are kept).
+ */
+export function mergeComponents(
+  rxn: Reaction,
+  incoming: Component[],
+  key: (c: Component) => string,
+  /** explicitEquiv: ids of incoming compounds whose equiv was given in the input (e.g. "2 equiv"). */
+  opts: { replace: boolean; hasAgents: boolean; explicitEquiv?: Set<string> },
+): Reaction {
+  if (!opts.replace) return incoming.reduce(addComponent, rxn);
+
+  const pool = new Map<string, Component[]>();
+  for (const c of rxn.components) pool.set(key(c), [...(pool.get(key(c)) ?? []), c]);
+
+  const result: Component[] = [];
+  const kept = new Set<string>();
+  for (const inc of incoming) {
+    const match = pool.get(key(inc))?.find((c) => !kept.has(c.id));
+    if (match) {
+      kept.add(match.id);
+      const equiv = opts.explicitEquiv?.has(inc.id) ? inc.equiv : match.equiv;
+      result.push({ ...match, role: inc.role, equiv });
+    } else result.push(inc);
+  }
+  for (const c of rxn.components) {
+    if (kept.has(c.id)) continue;
+    const keep = AGENT_ROLES.includes(c.role) && (!opts.hasAgents || !c.smiles);
+    if (keep) result.push(c);
+  }
+
+  let next: Reaction = { ...rxn, components: result };
+  const ref = result.find((c) => c.id === rxn.refId);
+  if (!ref || ref.role === 'solvent' || ref.role === 'product') {
+    const candidate = result.find((c) => c.role === 'reactant') ?? result.find((c) => c.role === 'reagent');
+    next = candidate
+      ? { ...next, refId: candidate.id, components: result.map((c) => (c.id === candidate.id ? { ...c, equiv: 1 } : c)) }
+      : { ...next, refId: null };
+  }
+  return next;
 }
 
 export function newComponent(p: Partial<Component> & { name: string; role: Role }): Component {
