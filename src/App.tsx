@@ -15,9 +15,9 @@ import { ReactionPreview } from './components/ReactionPreview';
 import { SavedMenu } from './components/SavedMenu';
 import type { StructureEditorProps } from './components/StructureEditor';
 import { StoichTable } from './components/StoichTable';
-import { download, reactionSmiles, toCsv, toMarkdown } from './export';
+import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from './export';
 import { useI18n } from './i18n';
-import { listSaved, loadCurrent, saveCurrent, saveReaction } from './storage';
+import { listSaved, loadCurrent, reactionToFile, saveCurrent, saveReaction } from './storage';
 import { useAutoLookup } from './useAutoLookup';
 import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
 
@@ -75,7 +75,7 @@ export default function App() {
 
   const notify = (msg: string) => {
     setFlash(msg);
-    setTimeout(() => setFlash(null), 1800);
+    setTimeout(() => setFlash(null), 3500);
   };
 
   const add = (data: CompoundData, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...data, role })));
@@ -110,11 +110,19 @@ export default function App() {
 
   const openEditor: OpenEditor = (req) => setEditor(req);
 
+  /** Save to this browser's list; "save as" asks for a new name and keeps the original. */
   const save = (asNew: boolean) => {
-    const list = saveReaction(rxn, asNew ? undefined : savedId);
+    let r = rxn;
+    if (asNew) {
+      const name = prompt(t.saveAsPrompt, rxn.title ? `${rxn.title} ${t.copySuffix}` : '');
+      if (name === null) return;
+      r = { ...rxn, title: name.trim() };
+      setRxn(r);
+    }
+    const list = saveReaction(r, asNew ? undefined : savedId);
     setSavedId(list[0].id);
-    setSavedSnapshot(JSON.stringify(rxn));
-    notify(t.savedState + ' ✓');
+    setSavedSnapshot(JSON.stringify(r));
+    notify((asNew ? t.savedAsMsg : t.savedMsg).replace('{name}', r.title || '—'));
   };
 
   const selectedC = rxn.components.find((c) => c.id === selected);
@@ -137,6 +145,14 @@ export default function App() {
               setSavedId(s.id);
               setSavedSnapshot(JSON.stringify(s.reaction));
               setSelected(null);
+            }}
+            onOpenFile={(r) => {
+              if (dirty && !confirm(t.unsaved + ' — ' + t.openFromFile + '?')) return;
+              setRxn(r);
+              setSavedId(undefined);
+              setSavedSnapshot(null);
+              setSelected(null);
+              notify(t.openedFile.replace('{name}', r.title || '—'));
             }}
             onDeleted={(id) => {
               if (id === savedId) {
@@ -181,10 +197,18 @@ export default function App() {
               {t.save}
             </button>
             {savedId && (
-              <button className="ghost no-print" onClick={() => save(true)}>
+              <button className="ghost no-print" onClick={() => save(true)} title={t.saveAsTip}>
                 {t.saveAs}
               </button>
             )}
+            <button
+              className="ghost no-print"
+              title={t.downloadTip}
+              disabled={!rxn.components.length}
+              onClick={() => download(`${fileBase}.reaction.json`, reactionToFile(rxn), 'application/json')}
+            >
+              ⬇ {t.download}
+            </button>
           </div>
           <div className="no-print">
             <h2>{t.importLabel}</h2>
@@ -196,7 +220,8 @@ export default function App() {
               onDraw={() =>
                 openEditor({
                   mode: 'reaction',
-                  initial: rxn.components.some((c) => c.smiles) ? reactionSmiles(rxn) : undefined,
+                  initial: drawableEquation(rxn),
+                  editing: rxn.components.length > 0,
                   onApply: importDrawing,
                 })
               }
@@ -209,7 +234,12 @@ export default function App() {
         <section className="card">
           <h2>{t.preview}</h2>
           <ReactionPreview rxn={rxn} rd={rd} rdError={rdError} onSelect={setSelected} />
-          {rxn.components.some((c) => c.smiles) && <p className="mono small muted break">{reactionSmiles(rxn)}</p>}
+          {rxn.components.some((c) => c.smiles) && (
+            <details className="smiles-details">
+              <summary>SMILES</summary>
+              <p className="mono small muted break">{reactionSmiles(rxn)}</p>
+            </details>
+          )}
         </section>
 
         {rxn.components.length > 0 && (

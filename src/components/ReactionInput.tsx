@@ -123,14 +123,18 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply, onD
         <button onClick={() => apply('add')} disabled={busy || !source.trim()}>
           {busy ? t.importing : hasComponents ? t.addToReaction : t.importBtn}
         </button>
-        {hasComponents && (
-          <button onClick={() => apply('replace')} disabled={busy || !source.trim()} title={t.replaceTip}>
+        {hasComponents && source.trim() && (
+          <button onClick={() => apply('replace')} disabled={busy} title={t.replaceTip}>
             {t.replaceEquation}
           </button>
         )}
+        <button className={hasComponents ? '' : 'ghost'} onClick={onDraw} title={hasComponents ? t.editDrawingTip : undefined}>
+          ✏️ {hasComponents ? t.editReaction : t.drawReaction}
+        </button>
+        <button className="ghost" onClick={() => fileRef.current?.click()}>{t.openFile}</button>
         {hasComponents && (
           <button
-            className="ghost"
+            className="link small smiles-edit"
             onClick={() => {
               setPayload(null);
               setText(currentEquation());
@@ -140,8 +144,6 @@ export function ReactionInput({ rd, hasComponents, currentEquation, onApply, onD
             {t.editEquation}
           </button>
         )}
-        <button className="ghost" onClick={onDraw}>✏️ {t.drawReaction}</button>
-        <button className="ghost" onClick={() => fileRef.current?.click()}>{t.openFile}</button>
         <input
           ref={fileRef}
           type="file"

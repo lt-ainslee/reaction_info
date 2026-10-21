@@ -71,11 +71,23 @@ export function reactionSmiles(rxn: Reaction): string {
   return `${pick(['reactant']).join('.')}>${pick(['reagent', 'catalyst', 'solvent']).join('.')}>${pick(['product']).join('.')}`;
 }
 
+/** Reactants >> products only: what is drawn when editing the scheme (agents stay in the table). */
+export function drawableEquation(rxn: Reaction): string | undefined {
+  const pick = (role: Component['role']) =>
+    rxn.components.filter((c) => c.role === role && c.smiles).map((c) => (c.smiles!.includes('.') ? `(${c.smiles})` : c.smiles));
+  const left = pick('reactant');
+  const right = pick('product');
+  return left.length || right.length ? `${left.join('.')}>>${right.join('.')}` : undefined;
+}
+
 export function download(filename: string, content: string, type = 'text/csv;charset=utf-8') {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  // Some browsers ignore the filename unless the link is in the document.
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

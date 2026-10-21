@@ -269,7 +269,8 @@ const AGENT_ROLES: Role[] = ['reagent', 'catalyst', 'solvent'];
  * data (amount, form, purity…); unmatched reactants/products are dropped, and
  * existing agents are dropped only if the new input lists agents itself and
  * the agent has a structure to compare (text-only catalysts like Pd(PPh3)4
- * typed by hand are kept).
+ * typed by hand are kept). Compounds without a structure also survive a
+ * structural update (drawing / SMILES), which could not have included them.
  */
 export function mergeComponents(
   rxn: Reaction,
@@ -293,10 +294,13 @@ export function mergeComponents(
       result.push({ ...match, role: inc.role, equiv });
     } else result.push(inc);
   }
+  // A structural input (drawing / SMILES) cannot contain compounds that have
+  // no structure, so those are kept rather than treated as removed.
+  const structural = incoming.length > 0 && incoming.every((c) => c.smiles);
   for (const c of rxn.components) {
     if (kept.has(c.id)) continue;
-    const keep = AGENT_ROLES.includes(c.role) && (!opts.hasAgents || !c.smiles);
-    if (keep) result.push(c);
+    const keepAgent = AGENT_ROLES.includes(c.role) && (!opts.hasAgents || !c.smiles);
+    if (keepAgent || (structural && !c.smiles)) result.push(c);
   }
 
   let next: Reaction = { ...rxn, components: result };

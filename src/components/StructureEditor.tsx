@@ -15,11 +15,13 @@ export interface StructureEditorProps {
   initial?: string;
   /** 'molecule': a single compound; 'reaction': a scheme or several compounds. */
   mode: 'molecule' | 'reaction';
+  /** Editing the existing reaction (changes labels; the result replaces the scheme). */
+  editing?: boolean;
   onApply: (result: { text: string; isReaction: boolean }) => void;
   onClose: () => void;
 }
 
-export default function StructureEditor({ initial, mode, onApply, onClose }: StructureEditorProps) {
+export default function StructureEditor({ initial, mode, editing, onApply, onClose }: StructureEditorProps) {
   const { t } = useI18n();
   const ketcherRef = useRef<Ketcher | null>(null);
   const [ready, setReady] = useState(false);
@@ -51,8 +53,10 @@ export default function StructureEditor({ initial, mode, onApply, onClose }: Str
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t.drawTitle}>
       <div className="modal editor-modal">
         <header>
-          <h3>{mode === 'reaction' ? t.drawReaction : t.drawMolecule}</h3>
-          <span className="hint grow">{mode === 'reaction' ? t.drawReactionHint : t.drawMoleculeHint}</span>
+          <h3>{mode === 'reaction' ? (editing ? t.editReaction : t.drawReaction) : t.drawMolecule}</h3>
+          <span className="hint grow">
+            {mode === 'reaction' ? (editing ? t.editReactionHint : t.drawReactionHint) : t.drawMoleculeHint}
+          </span>
           <button className="icon" onClick={onClose} aria-label={t.close}>×</button>
         </header>
         <div className="editor-host">
@@ -75,7 +79,7 @@ export default function StructureEditor({ initial, mode, onApply, onClose }: Str
           {error && <span className="warn grow">{error}</span>}
           <span className="grow" />
           <button className="ghost" onClick={onClose}>{t.cancel}</button>
-          <button onClick={apply} disabled={!ready}>{mode === 'reaction' ? t.useDrawing : t.useStructure}</button>
+          <button onClick={apply} disabled={!ready}>{mode === 'reaction' ? (editing ? t.replaceEquation : t.useDrawing) : t.useStructure}</button>
         </footer>
       </div>
     </div>

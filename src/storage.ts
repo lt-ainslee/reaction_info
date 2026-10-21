@@ -40,3 +40,23 @@ export function deleteSaved(id: string): SavedReaction[] {
   write(SAVED, next);
   return next;
 }
+
+// ---- reaction files (.json) for backup / sharing between people ----
+
+const FILE_TAG = 'reaction-info';
+
+export function reactionToFile(r: Reaction): string {
+  return JSON.stringify({ app: FILE_TAG, version: 1, savedAt: new Date().toISOString(), reaction: r }, null, 2);
+}
+
+/** Parse a downloaded reaction file; returns null if it is not one. */
+export function reactionFromFile(text: string): Reaction | null {
+  try {
+    const d = JSON.parse(text);
+    const r = d?.app === FILE_TAG ? d.reaction : null;
+    if (!r || !Array.isArray(r.components) || typeof r.refMmol !== 'number') return null;
+    return r as Reaction;
+  } catch {
+    return null;
+  }
+}
