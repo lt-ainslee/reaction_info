@@ -76,6 +76,9 @@ export function download(filename: string, content: string, type = 'text/csv;cha
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
+  // Some browsers ignore the filename unless the link is in the document.
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
