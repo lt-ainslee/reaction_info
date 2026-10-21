@@ -48,13 +48,38 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
     </select>
   );
 
-  const nameCell = (c: Component) => (
-    <td className="name-cell">
-      <button className="link name" onClick={() => onSelect(c.id)}>{c.name}</button>
-      {c.formula && <span className="formula">{c.formula}</span>}
-      {pending.has(c.id) && <span className="lookup">{t.lookingUp}</span>}
-    </td>
-  );
+  /** Name cell (sticky on narrow screens); input rows carry the reference radio. */
+  const nameCell = (c: Component, withRef = false) => {
+    const canRef = withRef && c.role !== 'solvent';
+    return (
+      <td className="name-cell">
+        <div className="name-wrap">
+          {withRef && (
+            <span className="ref-slot">
+              {canRef && (
+                <input
+                  type="radio"
+                  name="ref"
+                  checked={c.id === rxn.refId}
+                  title={t.refTip}
+                  aria-label={t.refTip}
+                  onChange={() => onChange(setReference(rxn, c.id))}
+                />
+              )}
+            </span>
+          )}
+          <span className="name-text">
+            <button className="link name" onClick={() => onSelect(c.id)}>{c.name}</button>
+            <span className="name-meta">
+              {c.formula && <span className="formula">{c.formula}</span>}
+              {c.id === rxn.refId && withRef && <span className="badge">{t.col.ref}</span>}
+            </span>
+            {pending.has(c.id) && <span className="lookup">{t.lookingUp}</span>}
+          </span>
+        </div>
+      </td>
+    );
+  };
 
   const removeBtn = (c: Component) => (
     <td>
@@ -67,17 +92,16 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
       <table className="stoich">
         <thead>
           <tr>
-            <th title={t.refTip}>{t.col.ref}</th>
-            <th>{t.col.name}</th>
+            <th className="name-th" title={t.refTip}>{t.col.name}</th>
             <th>{t.col.role}</th>
-            <th>{t.col.mw}</th>
+            <th className="r">{t.col.mw}</th>
             <th>{t.col.form}</th>
-            <th>{t.col.density}</th>
-            <th>{t.col.purity}</th>
-            <th>{t.col.equiv}</th>
-            <th>{t.col.amount} {unitSelect('amount', AMOUNT_UNITS)}</th>
-            <th>{t.col.mass} {unitSelect('mass', MASS_UNITS)}</th>
-            <th>{t.col.volume} {unitSelect('volume', VOLUME_UNITS)}</th>
+            <th className="r">{t.col.density}</th>
+            <th className="r">{t.col.purity}</th>
+            <th className="r">{t.col.equiv}</th>
+            <th className="r">{t.col.amount} {unitSelect('amount', AMOUNT_UNITS)}</th>
+            <th className="r key">{t.col.mass} {unitSelect('mass', MASS_UNITS)}</th>
+            <th className="r key">{t.col.volume} {unitSelect('volume', VOLUME_UNITS)}</th>
             <th />
           </tr>
         </thead>
@@ -88,24 +112,13 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
             const solvent = c.role === 'solvent';
             return (
               <tr key={c.id} className={isRef ? 'ref' : ''}>
-                <td>
-                  {!solvent && (
-                    <input
-                      type="radio"
-                      name="ref"
-                      checked={isRef}
-                      title={t.refTip}
-                      onChange={() => onChange(setReference(rxn, c.id))}
-                    />
-                  )}
-                </td>
-                {nameCell(c)}
+                {nameCell(c, true)}
                 <td>{roleSelect(c)}</td>
-                <td>
+                <td className="r">
                   <NumInput value={c.mw} sig={6} onCommit={(mw) => up(c.id, { mw })} className={!c.mw && !solvent ? 'missing' : ''} placeholder={t.needMw} />
                 </td>
                 <td>{solvent ? <span className="muted">—</span> : <FormCell c={c} up={up} />}</td>
-                <td>
+                <td className="r">
                   {c.form === 'neat' || solvent ? (
                     <span className="density-cell">
                       <NumInput
@@ -129,14 +142,14 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
                     />
                   )}
                 </td>
-                <td>
+                <td className="r">
                   {c.form === 'neat' && !solvent ? (
                     <NumInput value={c.purity} sig={3} onCommit={(purity) => up(c.id, { purity: Math.min(purity, 100) })} />
                   ) : (
                     <span className="muted">—</span>
                   )}
                 </td>
-                <td>
+                <td className="r">
                   {solvent ? (
                     <span className="with-suffix" title={t.solventConcTip}>
                       <NumInput
@@ -158,21 +171,21 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
                     <NumInput value={c.equiv} sig={3} onCommit={(e) => onChange(setEquiv(rxn, c.id, e))} />
                   )}
                 </td>
-                <td>
+                <td className="r">
                   {solvent ? (
                     <span className="muted">—</span>
                   ) : (
                     <NumInput value={v.mmol !== undefined ? v.mmol / am : undefined} onCommit={(x) => onChange(setMmol(rxn, c.id, x * am))} />
                   )}
                 </td>
-                <td>
+                <td className="r key">
                   <NumInput
                     value={v.mass !== undefined ? v.mass / ms : undefined}
                     placeholder={c.mw || solvent ? '' : t.needMw}
                     onCommit={(x) => onChange(setMass(rxn, c.id, x * ms))}
                   />
                 </td>
-                <td>
+                <td className="r key">
                   {c.form === 'neat' && !solvent && (c.phase === 'solid' || c.phase === 'gas') ? (
                     <span className="muted">—</span>
                   ) : (
@@ -196,14 +209,14 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
         <table className="stoich products">
           <thead>
             <tr>
-              <th>{t.roles.product}</th>
+              <th className="name-th">{t.roles.product}</th>
               <th>{t.col.role}</th>
-              <th>{t.col.mw}</th>
-              <th>{t.col.equiv}</th>
-              <th>{t.col.amount} ({units.amount})</th>
-              <th>{t.theoMass} ({units.mass})</th>
-              <th>{t.actualMass} ({units.mass})</th>
-              <th>{t.yield}</th>
+              <th className="r">{t.col.mw}</th>
+              <th className="r">{t.col.equiv}</th>
+              <th className="r">{t.col.amount} ({units.amount})</th>
+              <th className="r">{t.theoMass} ({units.mass})</th>
+              <th className="r">{t.actualMass} ({units.mass})</th>
+              <th className="r">{t.yield}</th>
               <th />
             </tr>
           </thead>
@@ -214,22 +227,22 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
                 <tr key={c.id}>
                   {nameCell(c)}
                   <td>{roleSelect(c)}</td>
-                  <td>
+                  <td className="r">
                     <NumInput value={c.mw} sig={6} onCommit={(mw) => up(c.id, { mw })} className={!c.mw ? 'missing' : ''} placeholder={t.needMw} />
                   </td>
-                  <td>
+                  <td className="r">
                     <NumInput value={c.equiv} sig={3} onCommit={(e) => onChange(setEquiv(rxn, c.id, e))} />
                   </td>
-                  <td className="ro">{fmt(v.mmol !== undefined ? v.mmol / am : undefined)}</td>
-                  <td className="ro">{fmt(v.theoMass !== undefined ? v.theoMass / ms : undefined)}</td>
-                  <td>
+                  <td className="r ro">{fmt(v.mmol !== undefined ? v.mmol / am : undefined)}</td>
+                  <td className="r ro key">{fmt(v.theoMass !== undefined ? v.theoMass / ms : undefined)}</td>
+                  <td className="r">
                     <NumInput
                       value={c.actualMass !== undefined ? c.actualMass / ms : undefined}
                       onCommit={(x) => onChange(setMass(rxn, c.id, x * ms))}
                       onClear={() => up(c.id, { actualMass: undefined })}
                     />
                   </td>
-                  <td className="ro strong">{v.yieldPct !== undefined ? `${fmt(v.yieldPct, 3)}%` : ''}</td>
+                  <td className="r ro strong">{v.yieldPct !== undefined ? `${fmt(v.yieldPct, 3)}%` : ''}</td>
                   {removeBtn(c)}
                 </tr>
               );

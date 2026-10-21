@@ -131,108 +131,97 @@ export default function App() {
   const fileBase = (rxn.title || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
 
   return (
-    <div className="app">
-      <header className="top">
-        <div>
-          <h1>{t.appTitle}</h1>
-          <p className="subtitle">{t.appSubtitle}</p>
-        </div>
-        <div className="top-actions no-print">
-          <SavedMenu
-            currentId={savedId}
-            onLoad={(s) => {
-              setRxn(s.reaction);
-              setSavedId(s.id);
-              setSavedSnapshot(JSON.stringify(s.reaction));
-              setSelected(null);
-            }}
-            onOpenFile={(r) => {
-              if (dirty && !confirm(t.unsaved + ' — ' + t.openFromFile + '?')) return;
-              setRxn(r);
-              setSavedId(undefined);
-              setSavedSnapshot(null);
-              setSelected(null);
-              notify(t.openedFile.replace('{name}', r.title || '—'));
-            }}
-            onDeleted={(id) => {
-              if (id === savedId) {
+    <div className="shell">
+      <header className="appbar no-print">
+        <div className="appbar-inner">
+          <div className="brand">
+            <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden>
+              <rect width="32" height="32" rx="7" fill="var(--accent)" />
+              <path d="M12 6h8M14 6v7l-6 11a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-6-11V6" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="brand-name">{t.appTitle}</span>
+            <span className="brand-sub">{t.appSubtitle}</span>
+          </div>
+          <div className="top-actions">
+            <SavedMenu
+              currentId={savedId}
+              onLoad={(s) => {
+                setRxn(s.reaction);
+                setSavedId(s.id);
+                setSavedSnapshot(JSON.stringify(s.reaction));
+                setSelected(null);
+              }}
+              onOpenFile={(r) => {
+                if (dirty && !confirm(t.unsaved + ' — ' + t.openFromFile + '?')) return;
+                setRxn(r);
                 setSavedId(undefined);
                 setSavedSnapshot(null);
-              }
-            }}
-          />
-          <button
-            className="ghost"
-            onClick={() => {
-              if (dirty && !confirm(t.unsaved + ' — ' + t.newReaction + '?')) return;
-              setRxn(emptyReaction());
-              setSavedId(undefined);
-              setSavedSnapshot(null);
-              setSelected(null);
-            }}
-          >
-            {t.newReaction}
-          </button>
-          <div className="lang" role="group" aria-label="Language">
-            <button className={lang === 'zh' ? 'on' : ''} onClick={() => setLang('zh')}>中文</button>
-            <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button>
+                setSelected(null);
+                notify(t.openedFile.replace('{name}', r.title || '—'));
+              }}
+              onDeleted={(id) => {
+                if (id === savedId) {
+                  setSavedId(undefined);
+                  setSavedSnapshot(null);
+                }
+              }}
+            />
+            <button
+              className="ghost"
+              onClick={() => {
+                if (dirty && !confirm(t.unsaved + ' — ' + t.newReaction + '?')) return;
+                setRxn(emptyReaction());
+                setSavedId(undefined);
+                setSavedSnapshot(null);
+                setSelected(null);
+              }}
+            >
+              {t.newReaction}
+            </button>
+            <div className="lang" role="group" aria-label="Language">
+              <button className={lang === 'zh' ? 'on' : ''} onClick={() => setLang('zh')}>中文</button>
+              <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button>
+            </div>
           </div>
         </div>
       </header>
 
-      <main>
-        <section className="card">
-          <div className="row title-row">
-            <input
-              className="grow title-input"
-              value={rxn.title}
-              placeholder={t.reactionTitlePh}
-              aria-label={t.reactionTitle}
-              onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
-            />
-            <span className={'save-state no-print ' + (dirty ? 'dirty' : '')}>
+      <main className="app">
+        <div className="doc-head">
+          <input
+            className="title-input"
+            value={rxn.title}
+            placeholder={t.reactionTitlePh}
+            aria-label={t.reactionTitle}
+            onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
+          />
+          <div className="doc-actions no-print">
+            <span className={'save-state ' + (dirty ? 'dirty' : '')}>
               {dirty ? t.unsaved : savedId ? t.savedState : ''}
             </span>
-            <button className="no-print" onClick={() => save(false)} disabled={!dirty && !!savedId}>
+            <button onClick={() => save(false)} disabled={!dirty && !!savedId}>
               {t.save}
             </button>
             {savedId && (
-              <button className="ghost no-print" onClick={() => save(true)} title={t.saveAsTip}>
+              <button className="ghost" onClick={() => save(true)} title={t.saveAsTip}>
                 {t.saveAs}
               </button>
             )}
             <button
-              className="ghost no-print"
+              className="ghost"
               title={t.downloadTip}
               disabled={!rxn.components.length}
               onClick={() => download(`${fileBase}.reaction.json`, reactionToFile(rxn), 'application/json')}
             >
-              ⬇ {t.download}
+              {t.download}
             </button>
           </div>
-          <div className="no-print">
-            <h2>{t.importLabel}</h2>
-            <ReactionInput
-              rd={rd}
-              hasComponents={rxn.components.length > 0}
-              currentEquation={() => reactionSmiles(rxn)}
-              onApply={applyInput}
-              onDraw={() =>
-                openEditor({
-                  mode: 'reaction',
-                  initial: drawableEquation(rxn),
-                  editing: rxn.components.length > 0,
-                  onApply: importDrawing,
-                })
-              }
-            />
-            <h2>{t.addCompound}</h2>
-            <CompoundSearch rd={rd} onAdd={add} openEditor={openEditor} />
-          </div>
-        </section>
+        </div>
 
         <section className="card">
-          <h2>{t.preview}</h2>
+          <div className="card-head">
+            <h2>{t.preview}</h2>
+          </div>
           <ReactionPreview rxn={rxn} rd={rd} rdError={rdError} onSelect={setSelected} />
           {rxn.components.some((c) => c.smiles) && (
             <details className="smiles-details">
@@ -240,27 +229,49 @@ export default function App() {
               <p className="mono small muted break">{reactionSmiles(rxn)}</p>
             </details>
           )}
+          <div className="input-grid no-print">
+            <div className="input-block">
+              <h3>{t.importLabel}</h3>
+              <ReactionInput
+                rd={rd}
+                hasComponents={rxn.components.length > 0}
+                currentEquation={() => reactionSmiles(rxn)}
+                onApply={applyInput}
+                onDraw={() =>
+                  openEditor({
+                    mode: 'reaction',
+                    initial: drawableEquation(rxn),
+                    editing: rxn.components.length > 0,
+                    onApply: importDrawing,
+                  })
+                }
+              />
+            </div>
+            <div className="input-block">
+              <h3>{t.addCompound}</h3>
+              <CompoundSearch rd={rd} onAdd={add} openEditor={openEditor} />
+            </div>
+          </div>
         </section>
 
         {rxn.components.length > 0 && (
           <section className="card">
-            <div className="row spread">
+            <div className="card-head">
               <h2>{t.table}</h2>
-              <div className="row toolbar no-print">
-                <span className="muted">{t.scale}</span>
-                {[0.5, 2, 5, 10].map((f) => (
-                  <button key={f} className="ghost small" onClick={() => setRxn(scale(rxn, f))}>×{f}</button>
-                ))}
-                <button
-                  className="ghost small"
-                  onClick={() => navigator.clipboard.writeText(toMarkdown(rxn, units, exportLabels)).then(() => notify(t.copied))}
-                >
-                  {t.exportMd}
-                </button>
-                <button className="ghost small" onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>
-                  {t.exportCsv}
-                </button>
-                <button className="ghost small" onClick={() => window.print()}>{t.print}</button>
+              <div className="toolbar no-print">
+                <div className="seg" role="group" aria-label={t.scale}>
+                  <span className="seg-label">{t.scale}</span>
+                  {[0.5, 2, 5, 10].map((f) => (
+                    <button key={f} onClick={() => setRxn(scale(rxn, f))}>×{f}</button>
+                  ))}
+                </div>
+                <div className="seg" role="group">
+                  <button onClick={() => navigator.clipboard.writeText(toMarkdown(rxn, units, exportLabels)).then(() => notify(t.copied))}>
+                    {t.exportMd}
+                  </button>
+                  <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
+                  <button onClick={() => window.print()}>{t.print}</button>
+                </div>
               </div>
             </div>
             <StoichTable
@@ -276,8 +287,8 @@ export default function App() {
               }}
             />
             {product && rxn.refId && (
-              <div className="row plan no-print">
-                <span className="muted">{t.plan}:</span>
+              <div className="plan no-print">
+                <span className="plan-label">{t.plan}</span>
                 <label>
                   {t.planTarget} ({units.mass})
                   <NumInput value={planTarget} onCommit={setPlanTarget} onClear={() => setPlanTarget(undefined)} />
@@ -287,7 +298,7 @@ export default function App() {
                   <NumInput value={planYield} sig={3} onCommit={setPlanYield} />
                 </label>
                 <button
-                  className="small"
+                  className="ghost small"
                   disabled={!planTarget || !planYield}
                   onClick={() => setRxn(planForProduct(rxn, product.id, planTarget! * MASS_UNITS[units.mass], planYield!))}
                 >
@@ -295,23 +306,33 @@ export default function App() {
                 </button>
               </div>
             )}
-            <label className="field notes">
-              <span>{t.conditions}</span>
-              <input
-                value={rxn.conditions ?? ''}
-                placeholder={t.conditionsPh}
-                onChange={(e) => setRxn({ ...rxn, conditions: e.target.value })}
-              />
-            </label>
-            <label className="field notes">
-              <span>{t.notes}</span>
-              <textarea rows={3} value={rxn.notes ?? ''} onChange={(e) => setRxn({ ...rxn, notes: e.target.value })} />
-            </label>
           </section>
         )}
-      </main>
 
-      <footer className="muted small">{t.footer}</footer>
+        {rxn.components.length > 0 && (
+          <section className="card">
+            <div className="card-head">
+              <h2>{t.conditionsNotes}</h2>
+            </div>
+            <div className="notes-grid">
+              <label className="field">
+                <span>{t.conditions}</span>
+                <input
+                  value={rxn.conditions ?? ''}
+                  placeholder={t.conditionsPh}
+                  onChange={(e) => setRxn({ ...rxn, conditions: e.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>{t.notes}</span>
+                <textarea rows={3} value={rxn.notes ?? ''} onChange={(e) => setRxn({ ...rxn, notes: e.target.value })} />
+              </label>
+            </div>
+          </section>
+        )}
+
+        <footer className="muted small">{t.footer}</footer>
+      </main>
 
       {selectedC && (
         <DetailPanel
