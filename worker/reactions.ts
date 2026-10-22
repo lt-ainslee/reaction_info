@@ -17,9 +17,9 @@ interface Row {
 const summary = (r: Row) => ({ id: r.id, title: r.title, updatedAt: r.updated_at, version: r.version, owner: r.owner ?? undefined });
 const full = (r: Row) => ({ ...summary(r), reaction: JSON.parse(r.data) as Reaction });
 
-/** Text the list search matches against: title, names, CAS, formulas, SMILES. */
+/** Text the list search matches against: title, procedure, names, CAS, formulas, SMILES. */
 function searchText(r: Reaction) {
-  const parts = [r.title, r.operator, r.notebook, r.conditions];
+  const parts = [r.title, r.operator, r.notebook, r.conditions, r.notes];
   for (const c of r.components) parts.push(c.name, c.cas, c.formula, c.smiles);
   return parts.filter(Boolean).join(' ').toLowerCase();
 }

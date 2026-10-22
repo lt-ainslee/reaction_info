@@ -2,6 +2,7 @@
 // browser storage, downloaded files, later the server — goes through
 // normalizeReaction, so old or hand-edited data is repaired in one place.
 import { REACTION_SCHEMA, type Component, type Form, type Reaction, type Role } from '../chem/stoich';
+import { asProcDoc } from '../procedure/doc';
 import { newId } from './ids';
 
 const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent', 'product'];
@@ -44,8 +45,10 @@ export function normalizeReaction(raw: unknown): Reaction | null {
     refMmol: refMmol !== undefined && refMmol > 0 ? refMmol : 1,
     refId: refId && list.some((c) => c.id === refId) ? refId : null,
     components: list,
+    procedure: asProcDoc(raw.procedure),
     schemaVersion: REACTION_SCHEMA,
   };
+  if (!r.procedure) delete r.procedure;
   // Future: `if ((raw.schemaVersion ?? 1) < 2) r = migrateV1toV2(r)` etc.
   return r;
 }

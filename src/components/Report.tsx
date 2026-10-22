@@ -5,6 +5,7 @@ import type { MainModule } from '@rdkit/rdkit';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { formatSize, getGraph } from '../attachments/api';
+import { isEmptyDoc, procedureOf, toHtml } from '../procedure/doc';
 import { compoundOf, displayName, indexGraph, nodeTypeOf, treeRows, type Row } from '../attachments/graph';
 import { GHS } from '../chem/ghs';
 import { NmrMetaLine } from './NmrMetaLine';
@@ -35,6 +36,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const [now] = useState(() => new Date());
   const [attachments, setAttachments] = useState<(Row & { compoundId?: string })[]>([]);
+  const procedure = procedureOf(rxn);
 
   useEffect(() => {
     if (reactionId)
@@ -354,10 +356,10 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
             </section>
           )}
 
-          {rxn.notes?.trim() && (
+          {!isEmptyDoc(procedure) && (
             <section>
               <h2>{t.notes}</h2>
-              <div className="rp-text">{rxn.notes}</div>
+              <div className="rp-text rp-proc" dangerouslySetInnerHTML={{ __html: toHtml(procedure) }} />
             </section>
           )}
 

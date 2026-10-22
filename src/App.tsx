@@ -12,6 +12,7 @@ import { DetailPanel } from './components/DetailPanel';
 import Report from './components/Report';
 import { Attachments } from './components/Attachments';
 import { NumInput } from './components/NumInput';
+import { Procedure } from './components/Procedure';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview } from './components/ReactionPreview';
 import { SavedMenu } from './components/SavedMenu';
@@ -348,10 +349,10 @@ export default function App() {
                   onChange={(e) => setRxn({ ...rxn, conditions: e.target.value })}
                 />
               </label>
-              <label className="field">
+              <div className="field">
                 <span>{t.notes}</span>
-                <textarea rows={3} value={rxn.notes ?? ''} onChange={(e) => setRxn({ ...rxn, notes: e.target.value })} />
-              </label>
+                <Procedure rxn={rxn} setRxn={setRxn} onNotify={notify} />
+              </div>
             </div>
           </section>
         )}

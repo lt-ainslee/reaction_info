@@ -6,6 +6,7 @@
 // Every non-solvent component's amount is `refMmol × equiv`; the reference
 // (usually the limiting reagent) has equiv 1. Editing any amount, mass or
 // volume is translated back into an equiv (or into refMmol for the reference).
+import type { ProcDoc } from '../procedure/doc';
 
 export type Role = 'reactant' | 'reagent' | 'catalyst' | 'solvent' | 'product';
 /** neat = pure solid/liquid; solutionM = molar solution; solutionWt = wt% solution (e.g. 37% HCl). */
@@ -58,7 +59,10 @@ export interface Reaction {
   components: Component[];
   /** Free-text conditions, e.g. "90 °C, 12 h, N2". */
   conditions?: string;
+  /** Plain-text procedure (kept in sync with `procedure` for search and exports). */
   notes?: string;
+  /** Rich-text procedure (Tiptap JSON); older data only has `notes`. */
+  procedure?: ProcDoc;
   /** Report header fields. */
   operator?: string;
   notebook?: string;
