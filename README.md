@@ -34,6 +34,12 @@
 
 - 「上传 Bruker 文件夹」可选择或拖入样品文件夹或实验文件夹：按含 `acqus` 的目录拆分为各个实验，在浏览器中打包为 zip（保留 `样品/实验号/…` 结构，下载后 TopSpin / MNova 可直接打开），并从 `acqus`、`procs`、`title` 读取核、溶剂、频率、脉冲程序、实验号、标题；一维谱读取 `pdata/1/1r` 生成缩略图，可在线查看（拖选放大，双击复原）。
 - 其他文件（MNova `.mnova`、PDF、图片、JCAMP、CIF 等）原样保存；PDF 和图片可在线预览。
+- **节点图**（桌面默认，手机默认列表，可切换）：从左到右为 产物 → 样品 → 原始数据（Bruker 实验）→ 处理文件（MNova）/ 导出（PDF、图片）/ 峰列表。
+  - 上传时自动连线：Bruker 实验挂到同名样品节点下（不存在则新建）；MNova / PDF 等按文件名中的样品名、核（1H、13C…）、实验号猜测上游，猜不出则作为顶层节点。
+  - 拖动输出口（右侧圆点）到其他节点的输入口建立连接，一个节点可以有多个上游（如一份 MNova 同时用到 ¹H 和 ¹³C）；选中连线按 Delete 断开；不允许形成循环。
+  - 把文件拖到某个节点上即上传为它的下游；拖动后的节点位置会保存，「整理节点」可一键自动排布。
+  - 选中节点后在右侧查看详情：改名、备注、关联产物、添加峰列表（粘贴 MNova Multiplet Report，可一键插入表征数据，自动补上 `¹H NMR (400 MHz, CDCl₃) δ` 开头）、打包下载该节点及其全部下游。
+  - 表征数据旁显示该产物已有的谱图（¹H、¹³C、MS、2D）与缺项；PDF 报告中的附件清单按同样的树形结构列出。
 - 附件可关联到化合物并添加备注；产物的「表征数据（SI 格式）」可根据已上传的核磁一键插入开头（如 `¹H NMR (400 MHz, CDCl₃) δ`），并写入 PDF 报告。
 - 文件存放在 R2：正式环境 `reaction-info-files`，PR 预览 `reaction-info-files-preview`；上传时由 R2 校验 SHA-256，单个文件上限约 95 MB。
 
@@ -85,9 +91,11 @@ src/
     cdxml.ts       CDXML 解析（暂未在界面中使用）
   components/StructureEditor.tsx  Ketcher 结构编辑器（懒加载）
   components/Report.tsx  PDF 报告（A4 预览 + 打印样式）
-  components/Attachments.tsx  表征与谱图卡片（上传、列表、关联、表征数据）
+  components/Attachments.tsx  表征与谱图卡片（节点图 / 列表、上传、表征数据）
+  components/AttachmentGraph.tsx  节点图（React Flow + dagre，懒加载）
+  components/NodeInspector.tsx  节点详情面板
   components/SpectrumView.tsx  一维谱查看器
-  attachments/     Bruker 数据解析（bruker.ts）、zip、绘图、附件接口客户端
+  attachments/     Bruker 数据解析（bruker.ts）、zip、绘图、附件接口客户端；graph.ts 节点关系（纯函数）、uploader.ts 上传与自动连线、pack.ts 打包下载
   useAutoLookup.ts  后台查询物态与密度
   components/      界面组件
   storage/         存储层
@@ -103,7 +111,7 @@ worker/
   index.ts         API 路由（/api/*），其余请求交给静态资源
   schema.ts        数据库表结构与自动迁移
   reactions.ts     反应接口
-  attachments.ts   附件接口（R2 存文件，D1 存索引）
+  attachments.ts   附件与节点图接口（R2 存文件，D1 存索引、连线和位置）
 ```
 
 ## 计算约定

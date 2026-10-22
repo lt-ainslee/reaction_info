@@ -1,7 +1,8 @@
 // Client for the attachment API (worker/attachments.ts).
 
-export type Kind = 'nmr' | 'mnova' | 'jcamp' | 'ms' | 'hplc' | 'ir' | 'xrd' | 'cif' | 'pdf' | 'image' | 'other';
-export const KINDS: Kind[] = ['nmr', 'mnova', 'jcamp', 'ms', 'hplc', 'ir', 'xrd', 'cif', 'pdf', 'image', 'other'];
+export type Kind = 'nmr' | 'mnova' | 'jcamp' | 'ms' | 'hplc' | 'ir' | 'xrd' | 'cif' | 'pdf' | 'image' | 'text' | 'sample' | 'other';
+export type NodeType = 'sample' | 'source' | 'processed' | 'export' | 'peaklist' | 'other';
+export type Relation = 'contains' | 'processed' | 'export' | 'peaklist' | 'derived';
 
 export interface Attachment {
   id: string;
@@ -17,6 +18,24 @@ export interface Attachment {
   note: string;
   uploadedBy?: string;
   createdAt: number;
+  /** Graph role; absent on attachments uploaded before the node graph. */
+  nodeType?: NodeType;
+  /** Display name for file-less nodes (sample groups, peak lists). */
+  label?: string;
+  hasFile: boolean;
+  /** Saved position in the node graph. */
+  pos?: [number, number];
+}
+
+export interface Link {
+  from: string;
+  to: string;
+  relation?: Relation;
+}
+
+export interface Graph {
+  nodes: Attachment[];
+  links: Link[];
 }
 
 export interface UploadMeta {
@@ -25,6 +44,10 @@ export interface UploadMeta {
   compoundId?: string;
   note?: string;
   meta?: Record<string, unknown>;
+  nodeType?: NodeType;
+  /** Upstream nodes to link from. */
+  parentIds?: string[];
+  relation?: Relation;
 }
 
 export const fileUrl = (id: string, download = false) => `/api/attachments/${encodeURIComponent(id)}/file${download ? '?download' : ''}`;
@@ -41,7 +64,10 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
 export const listAttachments = (reactionId: string) =>
   call<Attachment[]>(`/api/reactions/${encodeURIComponent(reactionId)}/attachments`);
 
-export const updateAttachment = (id: string, patch: Partial<Pick<Attachment, 'note' | 'kind' | 'meta'>> & { compoundId?: string | null }) =>
+export const updateAttachment = (
+  id: string,
+  patch: Partial<Pick<Attachment, 'note' | 'kind' | 'meta' | 'label'>> & { compoundId?: string | null; nodeType?: NodeType },
+) =>
   call<Attachment>(`/api/attachments/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -49,6 +75,29 @@ export const updateAttachment = (id: string, patch: Partial<Pick<Attachment, 'no
   });
 
 export const deleteAttachment = (id: string) => call<void>(`/api/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+const rpath = (rid: string, what: string) => `/api/reactions/${encodeURIComponent(rid)}/${what}`;
+const jsonInit = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+export const getGraph = (rid: string) => call<Graph>(rpath(rid, 'graph'));
+
+export const createNode = (
+  rid: string,
+  node: { nodeType: 'sample' | 'peaklist'; label: string; meta?: Record<string, unknown>; compoundId?: string; parentIds?: string[] },
+) => call<Attachment>(rpath(rid, 'nodes'), jsonInit('POST', node));
+
+/** Rejects with Error('cycle') if the link would create a loop. */
+export const linkNodes = (rid: string, link: Link) => call<Link>(rpath(rid, 'links'), jsonInit('POST', link));
+
+export const unlinkNodes = (rid: string, from: string, to: string) =>
+  call<void>(`${rpath(rid, 'links')}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { method: 'DELETE' });
+
+export const savePositions = (rid: string, positions: Record<string, [number, number] | null>) =>
+  call<void>(rpath(rid, 'positions'), jsonInit('PUT', { positions }));
 
 export async function sha256Hex(data: Blob | Uint8Array): Promise<string> {
   const buf = data instanceof Blob ? await data.arrayBuffer() : data;

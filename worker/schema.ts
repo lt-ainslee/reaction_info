@@ -54,6 +54,26 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS idx_attachments_reaction ON attachments (reaction_id, deleted_at, created_at)`,
     ],
   },
+  {
+    version: 3,
+    sql: [
+      // Node graph: attachments become nodes (some without a file: sample groups,
+      // peak-list text), connected by directed links (upstream → downstream).
+      `ALTER TABLE attachments ADD COLUMN node_type TEXT`,
+      `ALTER TABLE attachments ADD COLUMN label TEXT`,
+      `ALTER TABLE attachments ADD COLUMN pos_x REAL`,
+      `ALTER TABLE attachments ADD COLUMN pos_y REAL`,
+      `CREATE TABLE IF NOT EXISTS attachment_links (
+        reaction_id TEXT NOT NULL,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        relation TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (from_id, to_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_links_reaction ON attachment_links (reaction_id)`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

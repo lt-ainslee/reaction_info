@@ -4,7 +4,8 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { formatSize, listAttachments, type Attachment } from '../attachments/api';
+import { formatSize, getGraph } from '../attachments/api';
+import { compoundOf, displayName, indexGraph, nodeTypeOf, treeRows, type Row } from '../attachments/graph';
 import { GHS } from '../chem/ghs';
 import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
@@ -33,10 +34,17 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
   const [safety, setSafety] = useState<SafetyMap>({});
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const [now] = useState(() => new Date());
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachments, setAttachments] = useState<(Row & { compoundId?: string })[]>([]);
 
   useEffect(() => {
-    if (reactionId) listAttachments(reactionId).then(setAttachments, () => setAttachments([]));
+    if (reactionId)
+      getGraph(reactionId).then(
+        (g) => {
+          const ix = indexGraph(g.nodes, g.links);
+          setAttachments(treeRows(ix, g.nodes).map((r) => ({ ...r, compoundId: compoundOf(ix, r.node.id) })));
+        },
+        () => setAttachments([]),
+      );
   }, [reactionId]);
 
   // While the report is open, printing shows only the report.
@@ -287,13 +295,17 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
               <h2>{t.att.reportList}</h2>
               <table className="rp-table">
                 <tbody>
-                  {attachments.map((a) => (
+                  {attachments.map(({ node: a, depth, compoundId }) => (
                     <tr key={a.id}>
-                      <td className="rp-name">{a.filename}</td>
-                      <td className="rp-sub"><NmrMetaLine att={a} /></td>
-                      <td className="rp-sub">{rxn.components.find((c) => c.id === a.compoundId)?.name ?? ''}</td>
+                      <td className="rp-name" style={{ paddingLeft: `${depth * 4}mm` }}>
+                        {depth > 0 && '└ '}
+                        {displayName(a)}
+                        <span className="rp-sub"> · {t.att.nodeTypes[nodeTypeOf(a)]}</span>
+                      </td>
+                      <td className="rp-sub">{a.kind === 'nmr' ? <NmrMetaLine att={a} /> : nodeTypeOf(a) === 'peaklist' ? String(a.meta.text ?? '') : ''}</td>
+                      <td className="rp-sub">{depth === 0 ? rxn.components.find((c) => c.id === compoundId)?.name ?? '' : ''}</td>
                       <td className="rp-sub">{a.note}</td>
-                      <td className="r rp-sub">{formatSize(a.size)}</td>
+                      <td className="r rp-sub">{a.hasFile ? formatSize(a.size) : ''}</td>
                     </tr>
                   ))}
                 </tbody>
