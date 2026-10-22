@@ -60,7 +60,12 @@ export interface Reaction {
   /** Report header fields. */
   operator?: string;
   notebook?: string;
+  /** Data format version (see storage/schema.ts); absent in data saved before it existed. */
+  schemaVersion?: number;
 }
+
+/** Current Reaction data format. Bump with a migration in storage/schema.ts. */
+export const REACTION_SCHEMA = 1;
 
 export interface Computed {
   mmol?: number;
@@ -330,5 +335,5 @@ export function newComponent(p: Partial<Component> & { name: string; role: Role 
 }
 
 export function emptyReaction(): Reaction {
-  return { title: '', refId: null, refMmol: 1, components: [] };
+  return { schemaVersion: REACTION_SCHEMA, title: '', refId: null, refMmol: 1, components: [] };
 }

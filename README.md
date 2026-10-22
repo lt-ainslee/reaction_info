@@ -59,6 +59,12 @@ src/
   components/Report.tsx  PDF 报告（A4 预览 + 打印样式）
   useAutoLookup.ts  后台查询物态与密度
   components/      界面组件
+  storage/         存储层
+    types.ts       ReactionRepo 接口（list / get / create / update(带版本) / remove）
+    localRepo.ts   浏览器 localStorage 实现（自动从旧格式迁移）
+    schema.ts      数据格式版本与读取时的校验/补全
+    useSavedDoc.ts 当前打开的保存（id、版本、未保存修改、冲突处理）
+    draft.ts / files.ts / ids.ts  草稿、.json 文件、UUID
   i18n.tsx         中英文文案
 ```
 

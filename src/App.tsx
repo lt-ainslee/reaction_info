@@ -18,7 +18,8 @@ import type { StructureEditorProps } from './components/StructureEditor';
 import { StoichTable } from './components/StoichTable';
 import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from './export';
 import { useI18n } from './i18n';
-import { listSaved, loadCurrent, reactionToFile, saveCurrent, saveReaction } from './storage';
+import { loadDraft, reactionToFile, saveDraft, type SavedReaction } from './storage';
+import { useSavedDoc } from './storage/useSavedDoc';
 import { useAutoLookup } from './useAutoLookup';
 import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
 
@@ -36,14 +37,9 @@ function loadUnits(): Units {
 
 export default function App() {
   const { t, lang, setLang } = useI18n();
-  const [rxn, setRxn] = useState<Reaction>(() => loadCurrent() ?? emptyReaction());
-  const [savedId, setSavedId] = useState<string | undefined>(() => {
-    try {
-      return localStorage.getItem('current-saved-id') ?? undefined;
-    } catch {
-      return undefined;
-    }
-  });
+  const [rxn, setRxn] = useState<Reaction>(() => loadDraft() ?? emptyReaction());
+  const doc = useSavedDoc(rxn, setRxn);
+  const { dirty, openId: savedId } = doc;
   const [units, setUnits] = useState<Units>(loadUnits);
   const [rd, setRd] = useState<MainModule | null>(null);
   const [rdError, setRdError] = useState(false);
@@ -53,27 +49,19 @@ export default function App() {
   const [planYield, setPlanYield] = useState<number | undefined>(80);
   const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-  // Snapshot of the reaction as last saved, to show unsaved changes.
-  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => {
-    const entry = savedId ? listSaved().find((x) => x.id === savedId) : undefined;
-    return entry ? JSON.stringify(entry.reaction) : null;
-  });
   const pending = useAutoLookup(rxn, setRxn, rd);
-  const dirty = savedSnapshot === null ? rxn.components.length > 0 : JSON.stringify(rxn) !== savedSnapshot;
 
   useEffect(() => {
     loadRDKit().then(setRd, () => setRdError(true));
   }, []);
-  useEffect(() => saveCurrent(rxn), [rxn]);
+  useEffect(() => saveDraft(rxn), [rxn]);
   useEffect(() => {
     try {
       localStorage.setItem('units', JSON.stringify(units));
-      if (savedId) localStorage.setItem('current-saved-id', savedId);
-      else localStorage.removeItem('current-saved-id');
     } catch {
       /* ignore */
     }
-  }, [units, savedId]);
+  }, [units]);
 
   const notify = (msg: string) => {
     setFlash(msg);
@@ -112,8 +100,8 @@ export default function App() {
 
   const openEditor: OpenEditor = (req) => setEditor(req);
 
-  /** Save to this browser's list; "save as" asks for a new name and keeps the original. */
-  const save = (asNew: boolean) => {
+  /** Save; "save as" asks for a new name and keeps the original. */
+  const save = async (asNew: boolean) => {
     let r = rxn;
     if (asNew) {
       const name = prompt(t.saveAsPrompt, rxn.title ? `${rxn.title} ${t.copySuffix}` : '');
@@ -121,11 +109,25 @@ export default function App() {
       r = { ...rxn, title: name.trim() };
       setRxn(r);
     }
-    const list = saveReaction(r, asNew ? undefined : savedId);
-    setSavedId(list[0].id);
-    setSavedSnapshot(JSON.stringify(r));
-    notify((asNew ? t.savedAsMsg : t.savedMsg).replace('{name}', r.title || '—'));
+    try {
+      const res = await doc.save(r, {
+        asNew,
+        copyTitle: (title) => `${title || t.report.untitled} ${t.copySuffix}`,
+        resolveConflict: (cur: SavedReaction) =>
+          confirm(t.conflictAsk.replace('{time}', new Date(cur.updatedAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en')))
+            ? 'overwrite'
+            : 'copy',
+      });
+      const name = res.saved?.title || '—';
+      if (res.outcome === 'updated') notify(t.savedMsg.replace('{name}', name));
+      else if (res.outcome === 'created') notify((asNew ? t.savedAsMsg : t.savedMsg).replace('{name}', name));
+      else if (res.outcome === 'copied') notify(t.savedCopyMsg.replace('{name}', name));
+    } catch {
+      notify(t.saveFailed);
+    }
   };
+
+  const confirmDiscard = (what: string) => !dirty || confirm(t.unsaved + ' — ' + what + '?');
 
   const selectedC = rxn.components.find((c) => c.id === selected);
   const product = rxn.components.find((c) => c.role === 'product');
@@ -147,34 +149,31 @@ export default function App() {
           <div className="top-actions">
             <SavedMenu
               currentId={savedId}
-              onLoad={(s) => {
-                setRxn(s.reaction);
-                setSavedId(s.id);
-                setSavedSnapshot(JSON.stringify(s.reaction));
-                setSelected(null);
+              onOpen={async (id) => {
+                if (id !== savedId && !confirmDiscard(t.load)) return false;
+                try {
+                  const ok = await doc.open(id);
+                  if (!ok) notify(t.notFound);
+                  setSelected(null);
+                  return ok;
+                } catch {
+                  notify(t.loadFailed);
+                  return false;
+                }
               }}
               onOpenFile={(r) => {
-                if (dirty && !confirm(t.unsaved + ' — ' + t.openFromFile + '?')) return;
-                setRxn(r);
-                setSavedId(undefined);
-                setSavedSnapshot(null);
+                if (!confirmDiscard(t.openFromFile)) return;
+                doc.detach(r);
                 setSelected(null);
                 notify(t.openedFile.replace('{name}', r.title || '—'));
               }}
-              onDeleted={(id) => {
-                if (id === savedId) {
-                  setSavedId(undefined);
-                  setSavedSnapshot(null);
-                }
-              }}
+              onDeleted={doc.removed}
             />
             <button
               className="ghost"
               onClick={() => {
-                if (dirty && !confirm(t.unsaved + ' — ' + t.newReaction + '?')) return;
-                setRxn(emptyReaction());
-                setSavedId(undefined);
-                setSavedSnapshot(null);
+                if (!confirmDiscard(t.newReaction)) return;
+                doc.detach(emptyReaction());
                 setSelected(null);
               }}
             >
@@ -201,7 +200,7 @@ export default function App() {
             <span className={'save-state ' + (dirty ? 'dirty' : '')}>
               {dirty ? t.unsaved : savedId ? t.savedState : ''}
             </span>
-            <button onClick={() => save(false)} disabled={!dirty && !!savedId}>
+            <button onClick={() => save(false)} disabled={doc.busy || (!dirty && !!savedId)}>
               {t.save}
             </button>
             {savedId && (
