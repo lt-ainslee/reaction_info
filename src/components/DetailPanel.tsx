@@ -2,6 +2,7 @@ import type { MainModule } from '@rdkit/rdkit';
 import { useEffect, useState } from 'react';
 import { getDetailsCached, pubchemUrl, searchByName, searchBySmiles, type PubChemDetails } from '../chem/pubchem';
 import { formulaMass } from '../chem/formula';
+import { GHS } from '../chem/ghs';
 import { parseInputText } from '../chem/parseInput';
 import { isValidSmiles, smilesInfo, smilesToSvg } from '../chem/rdkit';
 import type { Component } from '../chem/stoich';
@@ -9,17 +10,6 @@ import type { OpenEditor } from '../App';
 import { useI18n } from '../i18n';
 import { fmt } from '../units';
 
-const GHS: Record<string, [string, string]> = {
-  Explosive: ['GHS01', '爆炸物'],
-  Flammable: ['GHS02', '易燃'],
-  Oxidizer: ['GHS03', '氧化性'],
-  'Compressed Gas': ['GHS04', '压缩气体'],
-  Corrosive: ['GHS05', '腐蚀性'],
-  'Acute Toxic': ['GHS06', '急性毒性'],
-  Irritant: ['GHS07', '刺激性/有害'],
-  'Health Hazard': ['GHS08', '健康危害'],
-  'Environmental Hazard': ['GHS09', '环境危害'],
-};
 
 interface Props {
   c: Component;

@@ -207,15 +207,12 @@ export async function fetchPhysical(cid: number): Promise<PubChemPhysical> {
   };
 }
 
-export async function fetchDetails(cid: number): Promise<PubChemDetails> {
-  const phys = await getPhysicalCached(cid);
-  const headings = ['CAS', 'Flash Point', 'Solubility', 'GHS Classification'];
-  const results: Info[][] = [];
-  for (const h of headings) results.push(await viewHeading(cid, h).catch(() => []));
-  const [cas, fp, sol, ghs] = results;
+export interface PubChemSafety {
+  ghsPictograms: string[];
+  hazards: string[];
+}
 
-  const casList = infoStrings(cas).filter(isCas);
-
+function parseGhs(ghs: Info[]): PubChemSafety {
   const pictograms = new Set<string>();
   const hazards = new Set<string>();
   for (const i of ghs) {
@@ -224,15 +221,28 @@ export async function fetchDetails(cid: number): Promise<PubChemDetails> {
       if (/^H\d{3}/.test(s.String)) hazards.add(s.String.replace(/\s*\[.*?\]\s*$/, ''));
     }
   }
+  return { ghsPictograms: [...pictograms], hazards: [...hazards].slice(0, 12) };
+}
+
+/** GHS pictograms and H statements only (for reports). */
+export async function fetchSafety(cid: number): Promise<PubChemSafety> {
+  return parseGhs(await viewHeading(cid, 'GHS Classification').catch(() => []));
+}
+
+export async function fetchDetails(cid: number): Promise<PubChemDetails> {
+  const phys = await getPhysicalCached(cid);
+  const headings = ['CAS', 'Flash Point', 'Solubility', 'GHS Classification'];
+  const results: Info[][] = [];
+  for (const h of headings) results.push(await viewHeading(cid, h).catch(() => []));
+  const [cas, fp, sol, ghs] = results;
 
   const top = (infos: Info[], n = 3) => infoStrings(infos).slice(0, n);
   return {
     ...phys,
-    cas: casList[0],
+    cas: infoStrings(cas).filter(isCas)[0],
     flashPoint: top(fp),
     solubility: top(sol),
-    ghsPictograms: [...pictograms],
-    hazards: [...hazards].slice(0, 12),
+    ...parseGhs(ghs),
   };
 }
 
@@ -262,5 +272,17 @@ function cached<T>(key: string, fetcher: (cid: number) => Promise<T>) {
 
 export const getPhysicalCached = cached('pubchem-physical-v1', fetchPhysical);
 export const getDetailsCached = cached('pubchem-details-v2', fetchDetails);
+const getSafetyOnlyCached = cached('pubchem-safety-v1', fetchSafety);
+
+/** Safety info, reusing a full details record when one is already cached. */
+export async function getSafetyCached(cid: number): Promise<PubChemSafety> {
+  try {
+    const details = JSON.parse(localStorage.getItem('pubchem-details-v2') ?? '{}')[cid] as PubChemDetails | undefined;
+    if (details) return { ghsPictograms: details.ghsPictograms, hazards: details.hazards };
+  } catch {
+    /* ignore */
+  }
+  return getSafetyOnlyCached(cid);
+}
 
 export const pubchemUrl = (cid: number) => `https://pubchem.ncbi.nlm.nih.gov/compound/${cid}`;

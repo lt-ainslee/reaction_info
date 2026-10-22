@@ -1,12 +1,25 @@
-# Cloudflare Workers static-assets site (no Worker script needed).
+# Cloudflare Worker: static site (dist/) + API (/api/*, worker/index.ts) + D1.
 # Build: `npm run build`, deploy: `npx wrangler deploy` (Workers Builds runs this automatically).
+# The Worker creates / upgrades its own database tables (worker/schema.ts).
 name = "reaction-info"
+main = "worker/index.ts"
 compatibility_date = "2026-10-01"
 
 [assets]
 directory = "./dist"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
 
-# Required by `wrangler preview`, which Workers Builds runs for non-production
-# branches (pull requests). Empty: assets and settings above are inherited.
+[[d1_databases]]
+binding = "DB"
+database_name = "reaction-info-db"
+database_id = "0e04cf61-e5d5-4faa-a51d-00dcd74c18f6"
+
+# `wrangler preview` (pull-request builds) uses the preview database, never production data.
 [previews]
+
+[[previews.d1_databases]]
+binding = "DB"
+database_name = "reaction-info-db-preview"
+database_id = "bfdfdd77-939b-4181-bed3-f51d62f8e3dd"

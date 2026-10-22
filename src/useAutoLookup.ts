@@ -1,7 +1,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { getPhysicalCached, searchByName, searchBySmiles } from './chem/pubchem';
-import { hasCjk } from './chem/resolve';
+import { getPhysicalCached } from './chem/pubchem';
+import { findCid } from './chem/resolve';
 import { updateComponent, type Component, type Reaction } from './chem/stoich';
 
 /** Compounds whose physical state or (for liquids) density is still unknown. */
@@ -11,17 +11,6 @@ const wantsLookup = (c: Component) =>
   c.lookup === undefined &&
   (c.phase === undefined || (c.phase === 'liquid' && !c.density));
 
-async function findCid(c: Component): Promise<number | undefined> {
-  if (c.cid) return c.cid;
-  if (c.smiles) {
-    const [hit] = await searchBySmiles(c.smiles);
-    if (hit) return hit.cid;
-  }
-  const q = c.cas ?? c.name;
-  if (!q || hasCjk(q)) return undefined;
-  const [hit] = await searchByName(q);
-  return hit?.cid;
-}
 
 /**
  * Look up phase and density on PubChem for newly added compounds, one at a
