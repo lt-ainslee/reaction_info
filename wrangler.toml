@@ -16,10 +16,19 @@ binding = "DB"
 database_name = "reaction-info-db"
 database_id = "0e04cf61-e5d5-4faa-a51d-00dcd74c18f6"
 
-# `wrangler preview` (pull-request builds) uses the preview database, never production data.
+# Attachments (spectra, MNova files, PDFs…).
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "reaction-info-files"
+
+# `wrangler preview` (pull-request builds) uses the preview database and bucket, never production data.
 [previews]
 
 [[previews.d1_databases]]
 binding = "DB"
 database_name = "reaction-info-db-preview"
 database_id = "bfdfdd77-939b-4181-bed3-f51d62f8e3dd"
+
+[[previews.r2_buckets]]
+binding = "FILES"
+bucket_name = "reaction-info-files-preview"

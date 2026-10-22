@@ -4,7 +4,10 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { formatSize, getGraph } from '../attachments/api';
+import { compoundOf, displayName, indexGraph, nodeTypeOf, treeRows, type Row } from '../attachments/graph';
 import { GHS } from '../chem/ghs';
+import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { smilesToSvg } from '../chem/rdkit';
 import { findCid } from '../chem/resolve';
@@ -16,19 +19,33 @@ interface Props {
   rxn: Reaction;
   units: Units;
   rd: MainModule | null;
+  /** Saved reaction on the server, to list its attachments. */
+  reactionId?: string;
   onChange: (r: Reaction) => void;
   onClose: () => void;
 }
 
 type SafetyMap = Record<string, PubChemSafety | null>;
 
-export default function Report({ rxn, units, rd, onChange, onClose }: Props) {
+export default function Report({ rxn, units, rd, reactionId, onChange, onClose }: Props) {
   const { t, lang } = useI18n();
   const [withSafety, setWithSafety] = useState(true);
   const [withScheme, setWithScheme] = useState(true);
   const [safety, setSafety] = useState<SafetyMap>({});
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const [now] = useState(() => new Date());
+  const [attachments, setAttachments] = useState<(Row & { compoundId?: string })[]>([]);
+
+  useEffect(() => {
+    if (reactionId)
+      getGraph(reactionId).then(
+        (g) => {
+          const ix = indexGraph(g.nodes, g.links);
+          setAttachments(treeRows(ix, g.nodes).map((r) => ({ ...r, compoundId: compoundOf(ix, r.node.id) })));
+        },
+        () => setAttachments([]),
+      );
+  }, [reactionId]);
 
   // While the report is open, printing shows only the report.
   useEffect(() => {
@@ -254,6 +271,43 @@ export default function Report({ rxn, units, rd, onChange, onClose }: Props) {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </section>
+          )}
+
+          {products.some((p) => p.characterization?.trim()) && (
+            <section>
+              <h2>{t.att.characterization}</h2>
+              {products
+                .filter((p) => p.characterization?.trim())
+                .map((p) => (
+                  <div key={p.id} className="rp-charac">
+                    <div className="rp-name">{p.name}</div>
+                    <div className="rp-text">{p.characterization}</div>
+                  </div>
+                ))}
+            </section>
+          )}
+
+          {attachments.length > 0 && (
+            <section>
+              <h2>{t.att.reportList}</h2>
+              <table className="rp-table">
+                <tbody>
+                  {attachments.map(({ node: a, depth, compoundId }) => (
+                    <tr key={a.id}>
+                      <td className="rp-name" style={{ paddingLeft: `${depth * 4}mm` }}>
+                        {depth > 0 && '└ '}
+                        {displayName(a)}
+                        <span className="rp-sub"> · {t.att.nodeTypes[nodeTypeOf(a)]}</span>
+                      </td>
+                      <td className="rp-sub">{a.kind === 'nmr' ? <NmrMetaLine att={a} /> : nodeTypeOf(a) === 'peaklist' ? String(a.meta.text ?? '') : ''}</td>
+                      <td className="rp-sub">{depth === 0 ? rxn.components.find((c) => c.id === compoundId)?.name ?? '' : ''}</td>
+                      <td className="rp-sub">{a.note}</td>
+                      <td className="r rp-sub">{a.hasFile ? formatSize(a.size) : ''}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </section>

@@ -10,6 +10,7 @@ import {
 import { CompoundSearch } from './components/CompoundSearch';
 import { DetailPanel } from './components/DetailPanel';
 import Report from './components/Report';
+import { Attachments } from './components/Attachments';
 import { NumInput } from './components/NumInput';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview } from './components/ReactionPreview';
@@ -323,6 +324,17 @@ export default function App() {
         )}
 
         {rxn.components.length > 0 && (
+          <Attachments
+            rxn={rxn}
+            setRxn={setRxn}
+            reactionId={savedId}
+            remote={remote}
+            onSave={() => save(false)}
+            onNotify={notify}
+          />
+        )}
+
+        {rxn.components.length > 0 && (
           <section className="card">
             <div className="card-head">
               <h2>{t.conditionsNotes}</h2>
@@ -358,7 +370,9 @@ export default function App() {
         />
       )}
       {flash && <div className="toast">{flash}</div>}
-      {reportOpen && <Report rxn={rxn} units={units} rd={rd} onChange={setRxn} onClose={() => setReportOpen(false)} />}
+      {reportOpen && (
+        <Report rxn={rxn} units={units} rd={rd} reactionId={remote ? savedId : undefined} onChange={setRxn} onClose={() => setReportOpen(false)} />
+      )}
       {editor && (
         <Suspense fallback={<div className="modal-backdrop"><p className="toast">{t.editorLoading}</p></div>}>
           <StructureEditor

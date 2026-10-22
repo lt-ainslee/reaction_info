@@ -30,6 +30,50 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       )`,
     ],
   },
+  {
+    version: 2,
+    sql: [
+      // Files (spectra, MNova documents, PDFs, images…) live in R2; this is their index.
+      `CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        reaction_id TEXT NOT NULL,
+        compound_id TEXT,
+        kind TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT,
+        content_type TEXT,
+        r2_key TEXT NOT NULL,
+        preview_key TEXT,
+        meta TEXT NOT NULL DEFAULT '{}',
+        note TEXT NOT NULL DEFAULT '',
+        uploaded_by TEXT,
+        created_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_attachments_reaction ON attachments (reaction_id, deleted_at, created_at)`,
+    ],
+  },
+  {
+    version: 3,
+    sql: [
+      // Node graph: attachments become nodes (some without a file: sample groups,
+      // peak-list text), connected by directed links (upstream → downstream).
+      `ALTER TABLE attachments ADD COLUMN node_type TEXT`,
+      `ALTER TABLE attachments ADD COLUMN label TEXT`,
+      `ALTER TABLE attachments ADD COLUMN pos_x REAL`,
+      `ALTER TABLE attachments ADD COLUMN pos_y REAL`,
+      `CREATE TABLE IF NOT EXISTS attachment_links (
+        reaction_id TEXT NOT NULL,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        relation TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (from_id, to_id)
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_links_reaction ON attachment_links (reaction_id)`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
