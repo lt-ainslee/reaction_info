@@ -470,3 +470,11 @@ input.num.dispense, .stoich tr input.num.dispense { font-weight: 700; color: var
   body.report-open .paper { width: auto; min-height: 0; padding: 0; box-shadow: none; }
   .paper, .paper * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* Storage indicator and upload offer */
+.storage-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); padding: 2px 9px; border: 1px solid var(--border); border-radius: 999px; white-space: nowrap; }
+.storage-chip::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.storage-chip.remote::before { background: var(--ok); }
+.storage-chip.local::before { background: #d29922; }
+.upload-offer { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--accent-soft); border-radius: 6px; font-size: 12px; color: var(--text-2); }
+@media (max-width: 640px) { .storage-chip { display: none; } }

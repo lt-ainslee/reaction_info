@@ -18,7 +18,7 @@ import type { StructureEditorProps } from './components/StructureEditor';
 import { StoichTable } from './components/StoichTable';
 import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from './export';
 import { useI18n } from './i18n';
-import { loadDraft, reactionToFile, saveDraft, type SavedReaction } from './storage';
+import { loadDraft, reactionToFile, repoReady, saveDraft, type SavedReaction } from './storage';
 import { useSavedDoc } from './storage/useSavedDoc';
 import { useAutoLookup } from './useAutoLookup';
 import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
@@ -50,6 +50,11 @@ export default function App() {
   const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const pending = useAutoLookup(rxn, setRxn, rd);
+  const [storage, setStorage] = useState<'local' | 'remote' | null>(null);
+  useEffect(() => {
+    repoReady.then(setStorage);
+  }, []);
+  const remote = storage === 'remote';
 
   useEffect(() => {
     loadRDKit().then(setRd, () => setRdError(true));
@@ -119,8 +124,9 @@ export default function App() {
             : 'copy',
       });
       const name = res.saved?.title || '—';
-      if (res.outcome === 'updated') notify(t.savedMsg.replace('{name}', name));
-      else if (res.outcome === 'created') notify((asNew ? t.savedAsMsg : t.savedMsg).replace('{name}', name));
+      const msg = remote ? (asNew ? t.savedAsMsgRemote : t.savedMsgRemote) : asNew ? t.savedAsMsg : t.savedMsg;
+      if (res.outcome === 'updated') notify((remote ? t.savedMsgRemote : t.savedMsg).replace('{name}', name));
+      else if (res.outcome === 'created') notify(msg.replace('{name}', name));
       else if (res.outcome === 'copied') notify(t.savedCopyMsg.replace('{name}', name));
     } catch {
       notify(t.saveFailed);
@@ -147,7 +153,13 @@ export default function App() {
             <span className="brand-sub">{t.appSubtitle}</span>
           </div>
           <div className="top-actions">
+            {storage && (
+              <span className={'storage-chip ' + storage} title={remote ? t.storageTipRemote : t.storageTipLocal}>
+                {remote ? t.storageRemote : t.storageLocal}
+              </span>
+            )}
             <SavedMenu
+              onNotify={notify}
               currentId={savedId}
               onOpen={async (id) => {
                 if (id !== savedId && !confirmDiscard(t.load)) return false;

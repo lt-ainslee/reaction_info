@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
-import { reactionFromFile, repo, type SavedSummary } from '../storage';
+import { pendingLocalUploads, reactionFromFile, repo, uploadLocalReactions, type SavedSummary } from '../storage';
 
 interface Props {
   currentId?: string;
@@ -9,9 +9,10 @@ interface Props {
   onOpen: (id: string) => Promise<boolean>;
   onDeleted: (id: string) => void;
   onOpenFile: (r: Reaction) => void;
+  onNotify: (msg: string) => void;
 }
 
-export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile }: Props) {
+export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }: Props) {
   const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<SavedSummary[] | null>(null);
@@ -19,9 +20,26 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile }: Props) {
   const [fileError, setFileError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const [pendingUpload, setPendingUpload] = useState(0);
+  const [uploading, setUploading] = useState(false);
+
   const refresh = () => {
     setError(false);
     repo.list().then(setList, () => setError(true));
+    if (repo.kind === 'remote') pendingLocalUploads().then((ids) => setPendingUpload(ids.length), () => setPendingUpload(0));
+  };
+
+  const upload = async () => {
+    setUploading(true);
+    try {
+      const { uploaded, existing } = await uploadLocalReactions();
+      onNotify(t.uploadDone.replace('{n}', String(uploaded + existing)));
+      refresh();
+    } catch {
+      setError(true);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const toggle = () => {
@@ -38,6 +56,12 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile }: Props) {
       {open && (
         <div className="saved-list">
           <p className="hint saved-where">{repo.kind === 'local' ? t.savedWhere : t.savedWhereRemote}</p>
+          {pendingUpload > 0 && (
+            <div className="upload-offer">
+              <span>{t.uploadOffer.replace('{n}', String(pendingUpload))}</span>
+              <button className="small" onClick={upload} disabled={uploading}>{uploading ? t.uploading : t.uploadBtn}</button>
+            </div>
+          )}
           {error && <p className="warn small">{t.loadFailed}</p>}
           {!error && list === null && <p className="muted small">{t.loading}</p>}
           {list?.length === 0 && <p className="muted">{t.noSaved}</p>}

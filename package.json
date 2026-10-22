@@ -6,11 +6,12 @@
   "scripts": {
     "postinstall": "node scripts/copy-rdkit.mjs",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p worker/tsconfig.json && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc -b",
-    "deploy": "npm run build && npx wrangler deploy"
+    "typecheck": "tsc -b && tsc -p worker/tsconfig.json",
+    "deploy": "npm run build && wrangler deploy",
+    "dev:worker": "npm run build && wrangler dev"
   },
   "dependencies": {
     "@rdkit/rdkit": "^2026.9.1",
@@ -22,6 +23,7 @@
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261022.1",
     "@types/node": "^22.20.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -29,7 +31,8 @@
     "happy-dom": "^21.0.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "wrangler": "^4.151.3"
   },
   "engines": {
     "node": ">=20"

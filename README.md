@@ -11,6 +11,27 @@
 - **记录**：自动保存当前反应；「保存」「另存为…」把反应存在本浏览器的「已保存的反应」列表中（换电脑或清除浏览器数据后不可见）；「下载」把反应存为 .json 文件，可备份或发给组里其他人，再通过「已保存的反应 → 从文件打开」导入；导出 Markdown / CSV（Excel 可直接打开）。
 - **PDF 报告**：「导出 PDF 报告」生成 A4 报告预览（抬头含日期、记录人、实验编号；反应式与条件；投料表；产物与产率；各化合物 GHS 危险类别与 H 说明，导出时从 PubChem 获取；实验步骤），点「保存为 PDF」后在打印对话框中选择「另存为 PDF」。由浏览器生成，文字为矢量、中文正常显示。
 
+## 后端（Cloudflare Worker + D1）
+
+同一个 Worker 同时提供网页（`dist/`）和接口（`/api/*`，代码在 `worker/`）。保存的反应存放在 D1 数据库中，换电脑也能看到；
+接口不可用时（例如本地 `npm run dev`），网站自动改用浏览器本地存储，标题栏会显示当前存储位置。
+
+| 接口 | 说明 |
+|---|---|
+| `GET /api/health` | 健康检查（前端据此选择存储位置） |
+| `GET /api/reactions?q=` | 列表（最近保存在前，可按名称 / CAS / 分子式 / SMILES 搜索） |
+| `POST /api/reactions` | 新建（可带 `id`，用于上传浏览器里已有的反应） |
+| `GET /api/reactions/:id` | 读取 |
+| `PUT /api/reactions/:id` | 更新，需带 `baseVersion`；版本不一致返回 409 和服务器上的当前版本 |
+| `DELETE /api/reactions/:id` | 删除（软删除，数据库中可恢复） |
+
+- 数据库表由 Worker 自动创建和升级（`worker/schema.ts`），部署流程无需额外的迁移步骤；修改表结构时在 `MIGRATIONS` 末尾追加一项即可。
+- 每次保存的完整内容都记录在 `reaction_versions` 表中，便于追溯。
+- 正式部署使用 `reaction-info-db`，PR 预览（`wrangler preview`）使用 `reaction-info-db-preview`，见 `wrangler.toml`。
+- 本地联调：`npm run dev:worker`（构建后用本地模拟的 D1 运行 Worker，地址 http://127.0.0.1:8787）。
+
+> ⚠️ 目前尚未启用登录（Cloudflare Access）：任何知道网址的人都能查看、修改和删除保存在服务器上的反应。在启用 Access 之前，请不要保存敏感数据。
+
 ## 本地开发
 
 ```bash
@@ -62,10 +83,15 @@ src/
   storage/         存储层
     types.ts       ReactionRepo 接口（list / get / create / update(带版本) / remove）
     localRepo.ts   浏览器 localStorage 实现（自动从旧格式迁移）
+    apiRepo.ts     服务器实现（/api/reactions），index.ts 按 /api/health 自动选择
+    upload.ts      把浏览器里已有的反应上传到服务器
     schema.ts      数据格式版本与读取时的校验/补全
     useSavedDoc.ts 当前打开的保存（id、版本、未保存修改、冲突处理）
     draft.ts / files.ts / ids.ts  草稿、.json 文件、UUID
   i18n.tsx         中英文文案
+worker/
+  index.ts         API 路由（/api/*），其余请求交给静态资源
+  schema.ts        数据库表结构与自动迁移
 ```
 
 ## 计算约定
@@ -83,5 +109,5 @@ src/
 
 - ChemDraw 粘贴（CDXML，代码已具备）
 - 自动配平检查
-- 课题组共享反应库（Cloudflare D1 / KV）
+- 登录与权限（Cloudflare Access）
 - 常用反应模板（Suzuki、酰胺缩合、格氏反应等）
