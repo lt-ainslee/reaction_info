@@ -30,6 +30,30 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       )`,
     ],
   },
+  {
+    version: 2,
+    sql: [
+      // Files (spectra, MNova documents, PDFs, images…) live in R2; this is their index.
+      `CREATE TABLE IF NOT EXISTS attachments (
+        id TEXT PRIMARY KEY,
+        reaction_id TEXT NOT NULL,
+        compound_id TEXT,
+        kind TEXT NOT NULL,
+        filename TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT,
+        content_type TEXT,
+        r2_key TEXT NOT NULL,
+        preview_key TEXT,
+        meta TEXT NOT NULL DEFAULT '{}',
+        note TEXT NOT NULL DEFAULT '',
+        uploaded_by TEXT,
+        created_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_attachments_reaction ON attachments (reaction_id, deleted_at, created_at)`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

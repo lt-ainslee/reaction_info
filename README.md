@@ -30,6 +30,13 @@
 - 正式部署使用 `reaction-info-db`，PR 预览（`wrangler preview`）使用 `reaction-info-db-preview`，见 `wrangler.toml`。
 - 本地联调：`npm run dev:worker`（构建后用本地模拟的 D1 运行 Worker，地址 http://127.0.0.1:8787）。
 
+### 表征与谱图（R2 附件）
+
+- 「上传 Bruker 文件夹」可选择或拖入样品文件夹或实验文件夹：按含 `acqus` 的目录拆分为各个实验，在浏览器中打包为 zip（保留 `样品/实验号/…` 结构，下载后 TopSpin / MNova 可直接打开），并从 `acqus`、`procs`、`title` 读取核、溶剂、频率、脉冲程序、实验号、标题；一维谱读取 `pdata/1/1r` 生成缩略图，可在线查看（拖选放大，双击复原）。
+- 其他文件（MNova `.mnova`、PDF、图片、JCAMP、CIF 等）原样保存；PDF 和图片可在线预览。
+- 附件可关联到化合物并添加备注；产物的「表征数据（SI 格式）」可根据已上传的核磁一键插入开头（如 `¹H NMR (400 MHz, CDCl₃) δ`），并写入 PDF 报告。
+- 文件存放在 R2：正式环境 `reaction-info-files`，PR 预览 `reaction-info-files-preview`；上传时由 R2 校验 SHA-256，单个文件上限约 95 MB。
+
 > ⚠️ 目前尚未启用登录（Cloudflare Access）：任何知道网址的人都能查看、修改和删除保存在服务器上的反应。在启用 Access 之前，请不要保存敏感数据。
 
 ## 本地开发
@@ -78,6 +85,9 @@ src/
     cdxml.ts       CDXML 解析（暂未在界面中使用）
   components/StructureEditor.tsx  Ketcher 结构编辑器（懒加载）
   components/Report.tsx  PDF 报告（A4 预览 + 打印样式）
+  components/Attachments.tsx  表征与谱图卡片（上传、列表、关联、表征数据）
+  components/SpectrumView.tsx  一维谱查看器
+  attachments/     Bruker 数据解析（bruker.ts）、zip、绘图、附件接口客户端
   useAutoLookup.ts  后台查询物态与密度
   components/      界面组件
   storage/         存储层
@@ -92,6 +102,8 @@ src/
 worker/
   index.ts         API 路由（/api/*），其余请求交给静态资源
   schema.ts        数据库表结构与自动迁移
+  reactions.ts     反应接口
+  attachments.ts   附件接口（R2 存文件，D1 存索引）
 ```
 
 ## 计算约定

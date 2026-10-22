@@ -42,6 +42,8 @@ export interface Component {
   equiv: number;
   /** Product only: isolated mass in mg. */
   actualMass?: number;
+  /** Product: characterization text as written in SI (¹H NMR …, HRMS …). */
+  characterization?: string;
   /** Solvent only: fixed volume in µL… */
   solventVolume?: number;
   /** …or concentration of the reference compound in mol/L. */
