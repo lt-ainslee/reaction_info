@@ -388,3 +388,85 @@ input.num.dispense, .stoich tr input.num.dispense { font-weight: 700; color: var
   input, select, textarea { border: 0 !important; background: none !important; padding: 0; appearance: none; box-shadow: none; }
   .rx-mol-img, .panel-mol { filter: none; }
 }
+
+/* ------------------------------------------------------------------
+   Report (A4 paper preview + print)
+   ------------------------------------------------------------------ */
+.report-root { position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; background: color-mix(in srgb, var(--bg) 70%, #000 30%); }
+.report-bar { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding: 10px 20px; background: var(--card); border-bottom: 1px solid var(--border); font-size: 13px; }
+.report-bar label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.report-bar label input:not([type='checkbox']) { width: 140px; min-height: 30px; padding: 3px 8px; color: var(--text); }
+.report-bar .check { color: var(--text-2); cursor: pointer; }
+.report-bar .check input { min-height: 0; accent-color: var(--accent); }
+.report-scroll { flex: 1; overflow: auto; padding: 24px 16px 48px; }
+
+/* The paper is always light, like the printed page. */
+.paper {
+  --p-text: #1a1f2b; --p-muted: #5f6675; --p-faint: #8b919c; --p-line: #d9dde3; --p-soft: #f3f5f8; --p-accent: #2f5fd0;
+  width: 210mm; max-width: 100%; min-height: 297mm; margin: 0 auto; padding: 16mm 14mm 14mm;
+  background: #fff; color: var(--p-text); box-shadow: 0 6px 30px rgba(0,0,0,.25);
+  font-size: 10pt; line-height: 1.45; color-scheme: light;
+  display: flex; flex-direction: column;
+}
+.paper section { margin-top: 7mm; break-inside: avoid-page; }
+.paper section.rp-safety { break-inside: auto; }
+.paper h2 { font-size: 8.5pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--p-muted); padding-bottom: 1.5mm; border-bottom: 1px solid var(--p-line); margin-bottom: 3mm; }
+.rp-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10mm; padding-bottom: 4mm; border-bottom: 2px solid var(--p-text); }
+.rp-kicker { font-size: 8pt; letter-spacing: .1em; text-transform: uppercase; color: var(--p-accent); font-weight: 700; margin-bottom: 1mm; }
+.rp-head h1 { font-size: 17pt; line-height: 1.25; margin: 0; font-weight: 700; }
+.rp-meta { display: grid; grid-template-columns: auto auto; gap: 0.5mm 4mm; margin: 0; font-size: 9pt; white-space: nowrap; }
+.rp-meta dt { color: var(--p-muted); }
+.rp-meta dd { margin: 0; font-weight: 600; }
+
+.rp-scheme { display: flex; align-items: center; justify-content: center; gap: 4mm; flex-wrap: nowrap; }
+.rp-side { display: flex; align-items: center; gap: 1.5mm; flex-wrap: wrap; justify-content: center; }
+.rp-mol { margin: 0; display: flex; flex-direction: column; align-items: center; }
+.rp-mol img { width: 34mm; height: auto; }
+.rp-mol-text { width: 30mm; height: 22mm; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--p-line); border-radius: 2mm; font-weight: 600; }
+.rp-mol figcaption { font-size: 8pt; color: var(--p-muted); text-align: center; max-width: 36mm; }
+.rp-plus { color: var(--p-faint); font-size: 13pt; }
+.rp-arrow { flex: 0 0 34mm; display: flex; flex-direction: column; gap: 1.2mm; }
+.rp-line { height: 1.2px; background: var(--p-text); position: relative; margin-right: 1mm; }
+.rp-line::after { content: ''; position: absolute; right: -1mm; top: 50%; transform: translateY(-50%); border-left: 2.6mm solid var(--p-text); border-top: 1.1mm solid transparent; border-bottom: 1.1mm solid transparent; }
+.rp-agents { font-size: 8pt; text-align: center; min-height: 3.5mm; color: var(--p-text); }
+.rp-cond { margin: 3mm 0 0; font-size: 9.5pt; }
+.rp-cond span { color: var(--p-muted); margin-right: 3mm; font-size: 8.5pt; }
+
+.rp-table { width: 100%; border-collapse: collapse; font-size: 9pt; font-variant-numeric: tabular-nums; }
+.rp-table th { text-align: left; font-size: 7.8pt; font-weight: 600; color: var(--p-muted); padding: 1.2mm 1.6mm; border-bottom: 1px solid var(--p-text); white-space: nowrap; }
+.rp-table td { padding: 1.6mm; border-bottom: 1px solid var(--p-line); vertical-align: top; }
+.rp-table .r { text-align: right; }
+.rp-table td.key { font-weight: 700; }
+.rp-table tr.ref td { background: var(--p-soft); }
+.rp-table td.idx { color: var(--p-faint); width: 5mm; }
+.rp-table tbody tr { break-inside: avoid; }
+.rp-name { font-weight: 600; }
+.rp-sub, .rp-notes { font-size: 7.8pt; color: var(--p-muted); }
+.rp-sub { display: flex; flex-wrap: wrap; gap: 0 2.5mm; }
+.rp-sub span { white-space: nowrap; }
+.rp-table .nowrap, .rp-table td.r { white-space: nowrap; }
+.rp-badge { margin-left: 1.5mm; font-size: 6.8pt; font-weight: 700; color: var(--p-accent); border: 1px solid var(--p-accent); border-radius: 1mm; padding: 0 1mm; vertical-align: 1px; }
+.rp-ghs { display: flex; flex-wrap: wrap; gap: 1mm; }
+.ghs-tag { display: inline-flex; align-items: center; gap: 1.2mm; font-size: 7.6pt; white-space: nowrap; padding: 0.3mm 1.6mm 0.3mm 0.6mm; border: 1px solid #c8102e; border-radius: 1mm; color: #8a0b20; }
+.ghs-tag i { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 3.6mm; height: 3.6mm; font-style: normal; font-weight: 800; font-size: 6.5pt; color: #000; }
+.ghs-tag i::before { content: ''; position: absolute; inset: 0.55mm; border: 1.2px solid #c8102e; transform: rotate(45deg); }
+.rp-h { font-size: 7.8pt; color: var(--p-text); }
+.rp-fine { font-size: 7.5pt; color: var(--p-faint); margin: 2mm 0 0; }
+.rp-text { white-space: pre-wrap; font-size: 9.5pt; }
+.rp-foot { margin-top: auto; padding-top: 6mm; display: flex; justify-content: space-between; gap: 6mm; font-size: 7.5pt; color: var(--p-faint); border-top: 1px solid var(--p-line); }
+
+@media (max-width: 860px) {
+  .paper { padding: 8mm 6mm; min-height: 0; }
+  .rp-scheme { flex-wrap: wrap; }
+}
+
+@page { size: A4; margin: 12mm 12mm 12mm; }
+@media print {
+  body.report-open .shell, body.report-open .panel, body.report-open .toast { display: none !important; }
+  body.report-open { background: #fff; }
+  body.report-open .report-root { position: static; display: block; background: none; }
+  body.report-open .report-bar { display: none; }
+  body.report-open .report-scroll { overflow: visible; padding: 0; }
+  body.report-open .paper { width: auto; min-height: 0; padding: 0; box-shadow: none; }
+  .paper, .paper * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

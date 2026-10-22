@@ -57,6 +57,9 @@ export interface Reaction {
   /** Free-text conditions, e.g. "90 °C, 12 h, N2". */
   conditions?: string;
   notes?: string;
+  /** Report header fields. */
+  operator?: string;
+  notebook?: string;
 }
 
 export interface Computed {

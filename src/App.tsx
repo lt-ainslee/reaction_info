@@ -9,6 +9,7 @@ import {
 } from './chem/stoich';
 import { CompoundSearch } from './components/CompoundSearch';
 import { DetailPanel } from './components/DetailPanel';
+import Report from './components/Report';
 import { NumInput } from './components/NumInput';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview } from './components/ReactionPreview';
@@ -51,6 +52,7 @@ export default function App() {
   const [planTarget, setPlanTarget] = useState<number | undefined>();
   const [planYield, setPlanYield] = useState<number | undefined>(80);
   const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   // Snapshot of the reaction as last saved, to show unsaved changes.
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(() => {
     const entry = savedId ? listSaved().find((x) => x.id === savedId) : undefined;
@@ -270,8 +272,8 @@ export default function App() {
                     {t.exportMd}
                   </button>
                   <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
-                  <button onClick={() => window.print()}>{t.print}</button>
                 </div>
+                <button onClick={() => setReportOpen(true)}>{t.exportReport}</button>
               </div>
             </div>
             <StoichTable
@@ -345,6 +347,7 @@ export default function App() {
         />
       )}
       {flash && <div className="toast">{flash}</div>}
+      {reportOpen && <Report rxn={rxn} units={units} rd={rd} onChange={setRxn} onClose={() => setReportOpen(false)} />}
       {editor && (
         <Suspense fallback={<div className="modal-backdrop"><p className="toast">{t.editorLoading}</p></div>}>
           <StructureEditor

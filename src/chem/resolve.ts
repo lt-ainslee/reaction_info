@@ -215,3 +215,16 @@ export function compoundKey(rd: MainModule | null, c: { smiles?: string; name: s
   }
   return c.cas ? 'cas:' + c.cas : 'name:' + c.name.trim().toLowerCase();
 }
+
+/** PubChem CID for a component: stored, else by structure, else by CAS / name. */
+export async function findCid(c: Component): Promise<number | undefined> {
+  if (c.cid) return c.cid;
+  if (c.smiles) {
+    const [hit] = await searchBySmiles(c.smiles);
+    if (hit) return hit.cid;
+  }
+  const q = c.cas ?? c.name;
+  if (!q || hasCjk(q)) return undefined;
+  const [hit] = await searchByName(q);
+  return hit?.cid;
+}
