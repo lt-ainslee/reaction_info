@@ -12,7 +12,8 @@ import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { smilesToSvg } from '../chem/rdkit';
 import { findCid } from '../chem/resolve';
-import { compute, type Component, type Reaction } from '../chem/stoich';
+import { activeRun, runCode } from '../chem/runs';
+import { compute, dispensedByVolume, type Component, type Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from '../units';
 
@@ -37,6 +38,9 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
   const [now] = useState(() => new Date());
   const [attachments, setAttachments] = useState<(Row & { compoundId?: string })[]>([]);
   const procedure = procedureOf(rxn);
+  const run = activeRun(rxn);
+  const code = runCode(rxn, run);
+  const withActual = rxn.components.some((c) => c.actualAmount);
 
   useEffect(() => {
     if (reactionId)
@@ -107,6 +111,15 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
     return out.join(' · ');
   };
 
+  const actualText = (c: Component, v: ReturnType<typeof compute>) => {
+    const a = c.actualAmount;
+    if (!a) return '';
+    const byVol = dispensedByVolume(c);
+    const amount = byVol && a.volume ? `${fmt(a.volume / vl)} ${units.volume}` : a.mass ? `${fmt(a.mass / ms)} ${units.mass}` : '';
+    const eq = v.actualEquiv !== undefined && c.id !== rxn.refId ? ` (${c.role === 'catalyst' ? `${fmt(v.actualEquiv * 100, 3)} mol%` : `${fmt(v.actualEquiv, 3)} eq`})` : '';
+    return amount + eq;
+  };
+
   const safetyRows = rxn.components
     .map((c) => ({ c, s: safety[c.id] }))
     .filter(({ s }) => s && (s.ghsPictograms.length || s.hazards.length));
@@ -114,7 +127,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
   const print = () => {
     const prev = document.title;
     // Browsers use the document title as the default PDF file name.
-    document.title = `${rxn.title || t.report.untitled} ${now.toISOString().slice(0, 10)}`;
+    document.title = `${code} ${rxn.title || t.report.untitled} ${run.date ?? now.toISOString().slice(0, 10)}`;
     const restore = () => {
       document.title = prev;
       window.removeEventListener('afterprint', restore);
@@ -134,7 +147,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
         </label>
         <label>
           {t.report.notebook}
-          <input value={rxn.notebook ?? ''} placeholder={t.report.notebookPh} onChange={(e) => onChange({ ...rxn, notebook: e.target.value })} />
+          <input value={rxn.notebook ?? ''} placeholder={code} onChange={(e) => onChange({ ...rxn, notebook: e.target.value || undefined })} />
         </label>
         <label className="check">
           <input type="checkbox" checked={withScheme} onChange={(e) => setWithScheme(e.target.checked)} />
@@ -158,18 +171,16 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
               <h1>{rxn.title || t.report.untitled}</h1>
             </div>
             <dl className="rp-meta">
+              <dt>{t.report.notebook}</dt>
+              <dd>{code}</dd>
               <dt>{t.report.date}</dt>
-              <dd>{dateText}</dd>
+              <dd>{run.date ?? dateText}</dd>
+              <dt>{t.runs.status}</dt>
+              <dd>{t.runs.statuses[run.status]}</dd>
               {rxn.operator && (
                 <>
                   <dt>{t.report.operator}</dt>
                   <dd>{rxn.operator}</dd>
-                </>
-              )}
-              {rxn.notebook && (
-                <>
-                  <dt>{t.report.notebook}</dt>
-                  <dd>{rxn.notebook}</dd>
                 </>
               )}
             </dl>
@@ -207,6 +218,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
                   <th className="r">{t.col.amount} ({units.amount})</th>
                   <th className="r">{t.col.mass} ({units.mass})</th>
                   <th className="r">{t.col.volume} ({units.volume})</th>
+                  {withActual && <th className="r">{t.runs.actual}</th>}
                   <th>{t.report.remarks}</th>
                 </tr>
               </thead>
@@ -232,6 +244,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
                       <td className="r">{c.role === 'solvent' ? '—' : fmt(v.mmol !== undefined ? v.mmol / am : undefined)}</td>
                       <td className="r key">{fmt(v.mass !== undefined ? v.mass / ms : undefined) || '—'}</td>
                       <td className="r key">{fmt(v.volume !== undefined ? v.volume / vl : undefined) || '—'}</td>
+                      {withActual && <td className="r">{actualText(c, v)}</td>}
                       <td className="rp-notes">{notes(c)}</td>
                     </tr>
                   );
@@ -275,6 +288,22 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
                   })}
                 </tbody>
               </table>
+              {(run.appearance || run.conclusion) && (
+                <p className="rp-cond">
+                  {run.appearance && (
+                    <>
+                      <span>{t.runs.appearance}</span>
+                      {run.appearance}{' '}
+                    </>
+                  )}
+                  {run.conclusion && (
+                    <>
+                      <span>{t.runs.conclusion}</span>
+                      {run.conclusion}
+                    </>
+                  )}
+                </p>
+              )}
             </section>
           )}
 

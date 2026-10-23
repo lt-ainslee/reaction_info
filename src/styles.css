@@ -157,8 +157,9 @@ button.icon:hover:not(:disabled) { background: var(--surface); color: var(--warn
 .app { max-width: 1280px; margin: 0 auto; padding: 20px 24px 8px; }
 
 .doc-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 16px; }
+.title-block { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .title-input {
-  flex: 1 1 320px;
+  width: 100%;
   min-width: 0;
   font-size: 22px;
   font-weight: 650;
@@ -170,6 +171,9 @@ button.icon:hover:not(:disabled) { background: var(--surface); color: var(--warn
 }
 .title-input:hover { border-color: var(--border); background: var(--card); }
 .title-input:focus { background: var(--card); }
+.code-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.code-label { white-space: nowrap; }
+.code-input { width: 150px; min-height: 26px; padding: 2px 8px; font-family: var(--mono); font-size: 12.5px; }
 .doc-actions { display: flex; align-items: center; gap: 8px; }
 .save-state { font-size: 12px; color: var(--muted); }
 .save-state.dirty { color: var(--warn); }
@@ -310,6 +314,7 @@ input.num.dispense, .stoich tr input.num.dispense { font-weight: 700; color: var
 .saved-item.current { background: var(--accent-soft); }
 .saved-item .link { display: flex; flex-direction: column; color: var(--text); }
 .saved-item small { color: var(--muted); font-weight: 400; }
+.saved-code { font-family: var(--mono); font-size: 11.5px; font-weight: 600; color: var(--accent); margin-right: 6px; }
 .saved-footer { display: flex; align-items: center; gap: 8px; padding-top: 8px; margin-top: 6px; border-top: 1px solid var(--border); }
 
 /* ------------------------------------------------------------------
@@ -642,3 +647,44 @@ button.danger:hover:not(:disabled) { border-color: var(--warn); color: var(--war
 .pe-full .pe-hint { padding: 6px max(12px, calc((100vw - 900px) / 2)); }
 body.pe-full-open { overflow: hidden; }
 @media print { .pe-toolbar, .pe-hint { display: none; } }
+
+/* Runs ------------------------------------------------------------------- */
+.runs-card { padding-top: 12px; padding-bottom: 14px; }
+.run-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.run-tab { display: grid; grid-template-columns: auto 1fr; column-gap: 7px; align-items: center; text-align: left; min-height: 0; padding: 5px 11px 6px; border: 1px solid var(--border); background: var(--surface); border-radius: 7px; color: var(--text-2); font-weight: 400; }
+.run-tab:hover:not(:disabled) { border-color: var(--border-strong); background: var(--card); color: var(--text); }
+.run-tab.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.run-tab-code { font-family: var(--mono); font-size: 12.5px; font-weight: 650; }
+.run-tab-meta { grid-column: 2; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.run-tab-meta b { color: var(--ok); font-weight: 600; }
+.run-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.s-planned { --s: var(--faint); } .s-running { --s: #d08700; } .s-done { --s: var(--ok); } .s-failed { --s: var(--warn); }
+.run-dot { background: var(--s); }
+.run-add { align-self: center; min-height: 32px; }
+.run-new { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: 7px; background: var(--surface); font-size: 13px; }
+.run-new label { display: flex; align-items: center; gap: 6px; }
+.run-new select { min-height: 28px; font-size: 12.5px; }
+.run-new .check input { min-height: 0; accent-color: var(--accent); }
+.run-new .hint { flex: 1 1 260px; margin: 0; }
+.run-new-actions { display: flex; gap: 6px; margin-left: auto; }
+.run-fields { display: grid; grid-template-columns: 150px 150px 120px 140px minmax(140px, 1fr) minmax(200px, 2fr) auto; gap: 10px; margin-top: 12px; align-items: end; }
+.run-fields input, .run-fields select { min-height: 30px; font-size: 13px; }
+.run-status { font-weight: 600; color: var(--s); }
+.run-remove { align-self: end; }
+@media (max-width: 1100px) {
+  .run-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .run-conclusion { grid-column: span 2; }
+}
+@media (max-width: 640px) {
+  .run-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .run-conclusion { grid-column: span 2; }
+}
+
+.actual-th { color: var(--accent); }
+.actual-cell { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.actual-cell .with-suffix { justify-content: flex-end; }
+.actual-dev { display: block; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.actual-dev.off { color: var(--warn); font-weight: 600; }
+label.check.small { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+label.check.small input { min-height: 0; accent-color: var(--accent); }
+@media print { .runs-card { display: none; } }

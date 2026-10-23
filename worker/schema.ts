@@ -74,6 +74,14 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS idx_links_reaction ON attachment_links (reaction_id)`,
     ],
   },
+  {
+    version: 4,
+    sql: [
+      // List summary (code, number of runs, best yield) as JSON; filled on save,
+      // and lazily by the list endpoint for rows saved before this column existed.
+      `ALTER TABLE reactions ADD COLUMN meta TEXT`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

@@ -75,10 +75,13 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
                 }}
               >
                 <strong>
+                  {s.meta?.code && <span className="saved-code">{s.meta.code}</span>}
                   {s.title || '—'}
                   {s.id === currentId && <em className="muted"> · {t.editing}</em>}
                 </strong>
                 <small>
+                  {s.meta && s.meta.runs > 1 && <>{t.runs.count.replace('{n}', String(s.meta.runs))} · </>}
+                  {s.meta?.bestYield !== undefined && <>{t.runs.best.replace('{y}', String(s.meta.bestYield))} · </>}
                   {new Date(s.updatedAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en')}
                   {s.owner && ` · ${s.owner}`}
                 </small>

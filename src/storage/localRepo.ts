@@ -1,4 +1,5 @@
 // Saved reactions in this browser's localStorage.
+import { reactionMeta } from '../chem/runs';
 import type { Reaction } from '../chem/stoich';
 import { newId } from './ids';
 import { normalizeReaction } from './schema';
@@ -52,7 +53,7 @@ function migrateLegacy(): SavedReaction[] {
   return list;
 }
 
-const summary = ({ reaction: _r, ...s }: SavedReaction): SavedSummary => s;
+const summary = ({ reaction, ...s }: SavedReaction): SavedSummary => ({ ...s, meta: reactionMeta(reaction) });
 
 export const localRepo: ReactionRepo = {
   kind: 'local',

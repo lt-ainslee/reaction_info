@@ -1,3 +1,4 @@
+import { activeRun, runCode } from './chem/runs';
 import { compute, type Component, type Reaction } from './chem/stoich';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from './units';
 
@@ -6,6 +7,7 @@ interface Labels {
   col: { name: string; role: string; mw: string; equiv: string; amount: string; mass: string; volume: string };
   yield: string;
   actualMass: string;
+  actual: string;
   conditions: string;
   liquid: string;
   notes: string;
@@ -30,6 +32,9 @@ function rows(rxn: Reaction, u: Units, t: Labels): string[][] {
       notes.push(`${t.actualMass} ${fmt(v.mass / MASS_UNITS[u.mass])} ${u.mass}`);
       if (v.yieldPct !== undefined) notes.push(`${t.yield} ${fmt(v.yieldPct, 3)}%`);
     }
+    if (c.actualAmount?.mass) notes.push(`${t.actual} ${fmt(c.actualAmount.mass / MASS_UNITS[u.mass])} ${u.mass}`);
+    else if (c.actualAmount?.volume) notes.push(`${t.actual} ${fmt(c.actualAmount.volume / VOLUME_UNITS[u.volume])} ${u.volume}`);
+    if (v.actualEquiv !== undefined && c.id !== rxn.refId) notes.push(`${fmt(v.actualEquiv, 3)} eq`);
     if (c.cas) notes.push(`CAS ${c.cas}`);
     const isSolvent = c.role === 'solvent';
     const mass = c.role === 'product' ? v.theoMass : v.mass;
@@ -52,7 +57,7 @@ export function toMarkdown(rxn: Reaction, u: Units, t: Labels): string {
   const esc = (s: string) => s.replace(/\|/g, '\\|');
   const line = (r: string[]) => `| ${r.map(esc).join(' | ')} |`;
   const out = [];
-  if (rxn.title) out.push(`### ${rxn.title}`, '');
+  out.push(`### ${[runCode(rxn, activeRun(rxn)), rxn.title].filter(Boolean).join(' ')}`, '');
   if (rxn.conditions?.trim()) out.push(`${t.conditions}: ${rxn.conditions.trim()}`, '');
   out.push(line(header), line(header.map(() => '---')), ...body.map(line));
   if (rxn.notes?.trim()) out.push('', rxn.notes.trim());

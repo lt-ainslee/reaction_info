@@ -1,6 +1,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { loadRDKit } from './chem/rdkit';
+import { activeRun, nextCode, runCode } from './chem/runs';
 import { groupFragments, parseInputText } from './chem/parseInput';
 import { compoundKey, resolveParsed, type CompoundData, type Resolved } from './chem/resolve';
 import {
@@ -15,12 +16,13 @@ import { NumInput } from './components/NumInput';
 import { Procedure } from './components/Procedure';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview } from './components/ReactionPreview';
+import { RunBar } from './components/RunBar';
 import { SavedMenu } from './components/SavedMenu';
 import type { StructureEditorProps } from './components/StructureEditor';
 import { StoichTable } from './components/StoichTable';
 import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from './export';
 import { useI18n } from './i18n';
-import { loadDraft, reactionToFile, repoReady, saveDraft, type SavedReaction } from './storage';
+import { loadDraft, reactionToFile, repo, repoReady, saveDraft, type SavedReaction } from './storage';
 import { useSavedDoc } from './storage/useSavedDoc';
 import { useAutoLookup } from './useAutoLookup';
 import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
@@ -57,6 +59,19 @@ export default function App() {
     repoReady.then(setStorage);
   }, []);
   const remote = storage === 'remote';
+
+  // Next free reaction code (from the saved list), offered when the code is empty.
+  const [suggestedCode, setSuggestedCode] = useState('RXN-001');
+  useEffect(() => {
+    if (!storage) return;
+    repo.list().then(
+      (list) => setSuggestedCode(nextCode(list.filter((s) => s.id !== savedId).map((s) => s.meta?.code))),
+      () => undefined,
+    );
+  }, [storage, savedId]);
+  const [showActual, setShowActual] = useState(false);
+  const run = activeRun(rxn);
+  const actualOn = showActual || run.status !== 'planned' || rxn.components.some((c) => c.actualAmount);
 
   useEffect(() => {
     loadRDKit().then(setRd, () => setRdError(true));
@@ -109,11 +124,13 @@ export default function App() {
 
   /** Save; "save as" asks for a new name and keeps the original. */
   const save = async (asNew: boolean) => {
-    let r = rxn;
+    // A reaction gets the next free code when first saved without one.
+    let r = !savedId && !asNew && !rxn.code?.trim() ? { ...rxn, code: suggestedCode } : rxn;
+    if (r !== rxn) setRxn(r);
     if (asNew) {
       const name = prompt(t.saveAsPrompt, rxn.title ? `${rxn.title} ${t.copySuffix}` : '');
       if (name === null) return;
-      r = { ...rxn, title: name.trim() };
+      r = { ...r, title: name.trim() };
       setRxn(r);
     }
     try {
@@ -139,8 +156,8 @@ export default function App() {
 
   const selectedC = rxn.components.find((c) => c.id === selected);
   const product = rxn.components.find((c) => c.role === 'product');
-  const exportLabels = { roles: t.roles, col: t.col, yield: t.yield, actualMass: t.actualMass, conditions: t.conditions, liquid: t.forms.liquid, notes: t.notes };
-  const fileBase = (rxn.title || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
+  const exportLabels = { roles: t.roles, col: t.col, yield: t.yield, actualMass: t.actualMass, actual: t.runs.actual, conditions: t.conditions, liquid: t.forms.liquid, notes: t.notes };
+  const fileBase = ([runCode(rxn, run), rxn.title].filter(Boolean).join(' ') || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
 
   return (
     <div className="shell">
@@ -203,13 +220,28 @@ export default function App() {
 
       <main className="app">
         <div className="doc-head">
-          <input
-            className="title-input"
-            value={rxn.title}
-            placeholder={t.reactionTitlePh}
-            aria-label={t.reactionTitle}
-            onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
-          />
+          <div className="title-block">
+            <input
+              className="title-input"
+              value={rxn.title}
+              placeholder={t.reactionTitlePh}
+              aria-label={t.reactionTitle}
+              onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
+            />
+            <span className="code-field">
+              <span className="code-label">{t.runs.code}</span>
+              <input
+                className="code-input"
+                value={rxn.code ?? ''}
+                placeholder={t.runs.codePh.replace('{code}', suggestedCode)}
+                aria-label={t.runs.code}
+                onChange={(e) => setRxn({ ...rxn, code: e.target.value || undefined })}
+              />
+              {!rxn.code && (
+                <button className="link small no-print" onClick={() => setRxn({ ...rxn, code: suggestedCode })}>{t.runs.autoCode}</button>
+              )}
+            </span>
+          </div>
           <div className="doc-actions no-print">
             <span className={'save-state ' + (dirty ? 'dirty' : '')}>
               {dirty ? t.unsaved : savedId ? t.savedState : ''}
@@ -232,6 +264,8 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        <RunBar rxn={rxn} setRxn={setRxn} onNotify={notify} suggestedCode={suggestedCode} />
 
         <section className="card">
           <div className="card-head">
@@ -286,6 +320,12 @@ export default function App() {
                   </button>
                   <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
                 </div>
+                {run.status === 'planned' && (
+                  <label className="check small" title={t.runs.actualTip}>
+                    <input type="checkbox" checked={actualOn} disabled={rxn.components.some((c) => c.actualAmount)} onChange={(e) => setShowActual(e.target.checked)} />
+                    {t.runs.actualToggle}
+                  </label>
+                )}
                 <button onClick={() => setReportOpen(true)}>{t.exportReport}</button>
               </div>
             </div>
@@ -294,6 +334,7 @@ export default function App() {
               units={units}
               onUnits={setUnits}
               pending={pending}
+              showActual={actualOn}
               onChange={setRxn}
               onSelect={setSelected}
               onRemove={(id) => {
