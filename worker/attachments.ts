@@ -9,12 +9,17 @@
 //   PATCH  /api/attachments/:id                   edit note / compound / kind / meta
 //   DELETE /api/attachments/:id                   delete (row soft-deleted, R2 objects and links removed)
 //
+// Attachments belong to an owner: a reaction, or a reagent lot (its identity
+// spectra, shared by every reaction using the bottle). The same routes exist
+// under /api/lots/:lid/…; the owner key stored in reaction_id is then "lot:<lid>".
+//
 // Graph (nodes = attachments, plus links):
 //   GET    /api/reactions/:rid/graph              { nodes, links }
 //   POST   /api/reactions/:rid/nodes              file-less node (sample group, peak list)
 //   POST   /api/reactions/:rid/links              { from, to, relation } — rejects cycles
 //   DELETE /api/reactions/:rid/links?from=&to=
 //   PUT    /api/reactions/:rid/positions          { positions: { id: [x, y] | null } }
+import { lotExists } from './lots';
 import { getRow } from './reactions';
 import { error, ID_RE, json, userOf, type Env } from './http';
 
@@ -108,6 +113,11 @@ async function linkParents(db: D1Database, rid: string, to: string, parents: unk
   }
 }
 
+type OwnerKind = 'reactions' | 'lots';
+const ownerKey = (kind: OwnerKind, id: string) => (kind === 'lots' ? `lot:${id}` : id);
+const ownerExists = async (db: D1Database, kind: OwnerKind, id: string) =>
+  kind === 'lots' ? /^[A-Za-z0-9_-]{1,64}$/.test(id) && lotExists(db, id) : !!(await getRow(db, id));
+
 const getAtt = (db: D1Database, id: string) =>
   db.prepare(`SELECT ${COLS} FROM attachments WHERE id = ? AND deleted_at IS NULL`).bind(id).first<AttRow>();
 
@@ -134,9 +144,11 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
   const db = env.DB;
   const method = req.method;
 
-  const list = /^\/api\/reactions\/([^/]+)\/attachments$/.exec(path);
+  const list = /^\/api\/(reactions|lots)\/([^/]+)\/attachments$/.exec(path);
   if (list) {
-    const rid = decodeURIComponent(list[1]);
+    const owner = list[1] as OwnerKind;
+    const oid = decodeURIComponent(list[2]);
+    const rid = ownerKey(owner, oid);
     if (method === 'GET') {
       const { results } = await db
         .prepare(`SELECT ${COLS} FROM attachments WHERE reaction_id = ? AND deleted_at IS NULL ORDER BY created_at`)
@@ -146,7 +158,7 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
     }
     if (method === 'POST') {
       if (!env.FILES) return error(503, 'files_not_configured');
-      if (!(await getRow(db, rid))) return error(404, 'reaction_not_found');
+      if (!(await ownerExists(db, owner, oid))) return error(404, 'owner_not_found');
       const meta = parseMetaHeader(req);
       if (!meta || typeof meta.filename !== 'string') return error(400, 'bad_meta');
       const size = Number(req.headers.get('Content-Length'));
@@ -159,12 +171,12 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
       const kind = (KINDS as readonly string[]).includes(meta.kind as string) ? (meta.kind as string) : 'other';
       const sha256 = typeof meta.sha256 === 'string' && /^[0-9a-f]{64}$/.test(meta.sha256) ? meta.sha256 : null;
       const contentType = req.headers.get('Content-Type') || 'application/octet-stream';
-      const key = `reactions/${rid}/${id}/${filename}`;
+      const key = `${owner}/${oid}/${id}/${filename}`;
       try {
         // Streamed straight into R2; with sha256 given, R2 rejects a corrupted upload.
         await env.FILES.put(key, req.body, {
           httpMetadata: { contentType },
-          customMetadata: { reaction: rid, filename },
+          customMetadata: { owner: rid, filename },
           ...(sha256 ? { sha256 } : {}),
         });
       } catch (e) {
@@ -189,8 +201,8 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
     return error(405, 'method_not_allowed');
   }
 
-  const graph = /^\/api\/reactions\/([^/]+)\/(graph|nodes|links|positions)$/.exec(path);
-  if (graph) return handleGraph(req, env, decodeURIComponent(graph[1]), graph[2]);
+  const graph = /^\/api\/(reactions|lots)\/([^/]+)\/(graph|nodes|links|positions)$/.exec(path);
+  if (graph) return handleGraph(req, env, graph[1] as OwnerKind, decodeURIComponent(graph[2]), graph[3]);
 
   const one = /^\/api\/attachments\/([^/]+)(\/file|\/preview)?$/.exec(path);
   if (!one) return null;
@@ -274,8 +286,9 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
   return error(405, 'method_not_allowed');
 }
 
-async function handleGraph(req: Request, env: Env, rid: string, what: string): Promise<Response> {
+async function handleGraph(req: Request, env: Env, kind: OwnerKind, oid: string, what: string): Promise<Response> {
   const db = env.DB;
+  const rid = ownerKey(kind, oid);
   const method = req.method;
   const readBody = async () => {
     try {
@@ -293,7 +306,7 @@ async function handleGraph(req: Request, env: Env, rid: string, what: string): P
     return json({ nodes: (nodes.results as AttRow[]).map(out), links: (links.results as LinkRow[]).map(linkOut) });
   }
 
-  if (!(await getRow(db, rid))) return error(404, 'reaction_not_found');
+  if (!(await ownerExists(db, kind, oid))) return error(404, 'owner_not_found');
 
   if (what === 'nodes' && method === 'POST') {
     const body = await readBody();

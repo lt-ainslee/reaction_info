@@ -74,6 +74,32 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS idx_links_reaction ON attachment_links (reaction_id)`,
     ],
   },
+  {
+    version: 4,
+    sql: [
+      // List summary (code, number of runs, best yield) as JSON; filled on save,
+      // and lazily by the list endpoint for rows saved before this column existed.
+      `ALTER TABLE reactions ADD COLUMN meta TEXT`,
+    ],
+  },
+  {
+    version: 5,
+    sql: [
+      // Reusable reagent lots (bottles). Their spectra are attachments whose
+      // reaction_id is the owner key "lot:<id>".
+      `CREATE TABLE IF NOT EXISTS reagent_lots (
+        id TEXT PRIMARY KEY,
+        compound_key TEXT NOT NULL,
+        data TEXT NOT NULL,
+        search_text TEXT NOT NULL DEFAULT '',
+        created_by TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_lots_key ON reagent_lots (compound_key, deleted_at)`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

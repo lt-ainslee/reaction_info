@@ -1,4 +1,5 @@
 // Saved reactions in this browser's localStorage.
+import { reactionMeta } from '../chem/runs';
 import type { Reaction } from '../chem/stoich';
 import { newId } from './ids';
 import { normalizeReaction } from './schema';
@@ -52,9 +53,12 @@ function migrateLegacy(): SavedReaction[] {
   return list;
 }
 
-const summary = ({ reaction: _r, ...s }: SavedReaction): SavedSummary => s;
+const summary = ({ reaction, ...s }: SavedReaction): SavedSummary => ({ ...s, meta: reactionMeta(reaction) });
 
-export const localRepo: ReactionRepo = {
+export const localRepo: ReactionRepo & {
+  /** Add a reaction keeping its id (backups); false if the id exists. */
+  importEntry(id: string, reaction: Reaction, updatedAt?: number): Promise<boolean>;
+} = {
   kind: 'local',
 
   async list() {
@@ -83,5 +87,12 @@ export const localRepo: ReactionRepo = {
 
   async remove(id) {
     writeAll(readAll().filter((s) => s.id !== id));
+  },
+
+  async importEntry(id, reaction, updatedAt = Date.now()) {
+    const all = readAll();
+    if (all.some((s) => s.id === id)) return false;
+    writeAll([...all, { id, title: reaction.title, updatedAt, version: 1, reaction }].sort((a, b) => b.updatedAt - a.updatedAt));
+    return true;
   },
 };

@@ -1,7 +1,9 @@
 import {
-  compute, needsDensity, setEquiv, setMass, setMmol, setReference, setRole, setVolume, updateComponent,
-  type Component, type Phase, type Reaction, type Role,
+  compute, dispensedByVolume, needsDensity, setEquiv, setMass, setMmol, setReference, setRole, setVolume, updateComponent,
+  type Component, type Computed, type Phase, type Reaction, type Role,
 } from '../chem/stoich';
+import { available, hasLotInfo, lotLabel, matchesCompound } from '../chem/lots';
+import { useInventory } from '../storage/inventory';
 import { useI18n } from '../i18n';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from '../units';
 import { NumInput } from './NumInput';
@@ -15,6 +17,8 @@ interface Props {
   onRemove: (id: string) => void;
   /** Compounds whose phase/density is being looked up. */
   pending: ReadonlySet<string>;
+  /** Show the "actual amount" column (runs being done or finished). */
+  showActual?: boolean;
 }
 
 const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent', 'product'];
@@ -23,7 +27,7 @@ type FormChoice = 'neat' | Phase | 'solutionM' | 'solutionWt';
 const FORM_CHOICES: FormChoice[] = ['solid', 'liquid', 'gas', 'solutionM', 'solutionWt'];
 const formChoice = (c: Component): FormChoice => (c.form === 'neat' ? c.phase ?? 'neat' : c.form);
 
-export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove, pending }: Props) {
+export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove, pending, showActual }: Props) {
   const { t } = useI18n();
   const inputs = rxn.components.filter((c) => c.role !== 'product');
   const products = rxn.components.filter((c) => c.role === 'product');
@@ -31,6 +35,8 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
   const ms = MASS_UNITS[units.mass];
   const vl = VOLUME_UNITS[units.volume];
   const up = (id: string, p: Partial<Component>) => onChange(updateComponent(rxn, id, p));
+  const inventory = useInventory();
+  const stockOf = (c: Component) => inventory?.filter((l) => available(l) && matchesCompound(l, c)).length ?? 0;
 
   const unitSelect = <K extends keyof Units>(key: K, options: Record<string, number>) => (
     <select className="unit" value={units[key]} onChange={(e) => onUnits({ ...units, [key]: e.target.value as Units[K] })}>
@@ -75,8 +81,56 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
               {c.id === rxn.refId && withRef && <span className="badge">{t.col.ref}</span>}
             </span>
             {pending.has(c.id) && <span className="lookup">{t.lookingUp}</span>}
+            {withRef && c.role !== 'solvent' && (
+              <button className={'lot-chip' + (hasLotInfo(c.lot) ? ' has' : '')} onClick={() => onSelect(c.id)} title={t.lots.title}>
+                {hasLotInfo(c.lot) ? (
+                  <>
+                    {c.lot!.verification && <span className={'lot-dot v-' + c.lot!.verification} />}
+                    {lotLabel(c.lot!, t.lots.made) || t.lots.title}
+                  </>
+                ) : stockOf(c) ? (
+                  <span className="lot-stock">{t.inv.pickStock.replace('{n}', String(stockOf(c)))}</span>
+                ) : (
+                  t.lots.chip
+                )}
+              </button>
+            )}
           </span>
         </div>
+      </td>
+    );
+  };
+
+  /** Actual mass weighed or volume added, with the resulting equiv and the deviation from the plan. */
+  const actualCell = (c: Component, v: Computed) => {
+    const byVol = dispensedByVolume(c);
+    const f = byVol ? vl : ms;
+    const val = byVol ? c.actualAmount?.volume : c.actualAmount?.mass;
+    const dev = v.deviation;
+    const eq =
+      v.actualEquiv === undefined || c.id === rxn.refId
+        ? ''
+        : c.role === 'catalyst'
+          ? `${fmt(v.actualEquiv * 100, 3)} mol%`
+          : `${fmt(v.actualEquiv, 3)} eq`;
+    return (
+      <td className="r actual-cell">
+        <span className="with-suffix">
+          <NumInput
+            value={val !== undefined ? val / f : undefined}
+            placeholder="—"
+            title={t.runs.actualTip}
+            onCommit={(x) => up(c.id, { actualAmount: byVol ? { volume: x * f } : { mass: x * f } })}
+            onClear={() => up(c.id, { actualAmount: undefined })}
+          />
+          <small>{byVol ? units.volume : units.mass}</small>
+        </span>
+        {(eq || dev !== undefined) && (
+          <small className={'actual-dev' + (dev !== undefined && Math.abs(dev) > 0.05 ? ' off' : '')} title={t.runs.deviation}>
+            {eq}
+            {dev !== undefined && ` ${dev >= 0 ? '+' : '−'}${fmt(Math.abs(dev) * 100, 2)}%`}
+          </small>
+        )}
       </td>
     );
   };
@@ -102,6 +156,7 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
             <th className="r">{t.col.amount} {unitSelect('amount', AMOUNT_UNITS)}</th>
             <th className="r key">{t.col.mass} {unitSelect('mass', MASS_UNITS)}</th>
             <th className="r key">{t.col.volume} {unitSelect('volume', VOLUME_UNITS)}</th>
+            {showActual && <th className="r actual-th" title={t.runs.actualTip}>{t.runs.actual}</th>}
             <th />
           </tr>
         </thead>
@@ -198,6 +253,7 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
                     />
                   )}
                 </td>
+                {showActual && actualCell(c, v)}
                 {removeBtn(c)}
               </tr>
             );

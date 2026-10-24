@@ -6,6 +6,10 @@
 // Every non-solvent component's amount is `refMmol × equiv`; the reference
 // (usually the limiting reagent) has equiv 1. Editing any amount, mass or
 // volume is translated back into an equiv (or into refMmol for the reference).
+import type { ProcDoc } from '../procedure/doc';
+import type { LotSnapshot } from './lots';
+import type { Reference } from './refs';
+import type { Run } from './runs';
 
 export type Role = 'reactant' | 'reagent' | 'catalyst' | 'solvent' | 'product';
 /** neat = pure solid/liquid; solutionM = molar solution; solutionWt = wt% solution (e.g. 37% HCl). */
@@ -42,6 +46,12 @@ export interface Component {
   equiv: number;
   /** Product only: isolated mass in mg. */
   actualMass?: number;
+  /** Inputs: what was actually weighed (mg) or dispensed (µL) in this run. */
+  actualAmount?: { mass?: number; volume?: number };
+  /** Inputs: the amount as written in the lab notebook ("1.006 g", "1.95 mL"). */
+  actualNote?: string;
+  /** Inputs: the reagent lot used in this run (snapshot; see chem/lots.ts). */
+  lot?: LotSnapshot;
   /** Product: characterization text as written in SI (¹H NMR …, HRMS …). */
   characterization?: string;
   /** Solvent only: fixed volume in µL… */
@@ -58,10 +68,20 @@ export interface Reaction {
   components: Component[];
   /** Free-text conditions, e.g. "90 °C, 12 h, N2". */
   conditions?: string;
+  /** Plain-text procedure (kept in sync with `procedure` for search and exports). */
   notes?: string;
+  /** Rich-text procedure (Tiptap JSON); older data only has `notes`. */
+  procedure?: ProcDoc;
   /** Report header fields. */
   operator?: string;
   notebook?: string;
+  /** Literature for the route (shared by all runs). */
+  references?: Reference[];
+  /** Reaction code, e.g. "LT-042"; runs are numbered "LT-042-1", "LT-042-2"… */
+  code?: string;
+  /** Experiments of this reaction (see chem/runs.ts); the active one's data is the fields above. */
+  runs?: Run[];
+  activeRunId?: string;
   /** Data format version (see storage/schema.ts); absent in data saved before it existed. */
   schemaVersion?: number;
 }
@@ -77,19 +97,33 @@ export interface Computed {
   theoMass?: number;
   /** Product: yield %. */
   yieldPct?: number;
+  /** Inputs with an actual amount: mmol and equiv actually added… */
+  actualMmol?: number;
+  actualEquiv?: number;
+  /** …and the relative deviation from the plan (0.05 = 5 % more). */
+  deviation?: number;
 }
 
 const pos = (x: number | undefined): x is number => x !== undefined && Number.isFinite(x) && x > 0;
 
 export function compute(rxn: Reaction, c: Component): Computed {
   if (c.role === 'solvent') return computeSolvent(rxn, c);
-  const mmol = rxn.refMmol * c.equiv;
   if (c.role === 'product') {
+    // Theoretical yield from what was actually added of the reference, when recorded.
+    const mmol = effectiveRefMmol(rxn) * c.equiv;
     const theoMass = pos(c.mw) ? mmol * c.mw : undefined;
     const yieldPct = pos(theoMass) && pos(c.actualMass) ? (c.actualMass / theoMass) * 100 : undefined;
     return { mmol, theoMass, mass: c.actualMass, yieldPct };
   }
-  return { mmol, ...amountToMassVolume(c, mmol) };
+  const mmol = rxn.refMmol * c.equiv;
+  const out: Computed = { mmol, ...amountToMassVolume(c, mmol) };
+  const actual = actualMmol(c);
+  if (actual !== undefined) {
+    out.actualMmol = actual;
+    out.actualEquiv = actual / effectiveRefMmol(rxn);
+    if (pos(mmol)) out.deviation = actual / mmol - 1;
+  }
+  return out;
 }
 
 function computeSolvent(rxn: Reaction, c: Component): Computed {
@@ -97,7 +131,30 @@ function computeSolvent(rxn: Reaction, c: Component): Computed {
   if (pos(c.solventConc)) volume = (rxn.refMmol / c.solventConc) * 1000;
   else if (pos(c.solventVolume)) volume = c.solventVolume;
   const mass = pos(volume) && pos(c.density) ? volume * c.density : undefined;
-  return { volume, mass };
+  const out: Computed = { volume, mass };
+  const av = c.actualAmount?.volume;
+  if (pos(av) && pos(volume)) out.deviation = av / volume - 1;
+  return out;
+}
+
+/** Whether an actual amount is entered as a volume (liquids, molar solutions, solvents) or a mass. */
+export const dispensedByVolume = (c: Component) =>
+  c.role === 'solvent' || c.form === 'solutionM' || (c.form === 'neat' && c.phase === 'liquid');
+
+/** mmol actually added, from the recorded mass or volume. */
+export function actualMmol(c: Component): number | undefined {
+  if (c.role === 'solvent' || c.role === 'product' || !c.actualAmount) return undefined;
+  const { mass, volume } = c.actualAmount;
+  if (pos(mass)) return massToMmol(c, mass);
+  if (pos(volume)) return volumeToMmol(c, volume);
+  return undefined;
+}
+
+/** Reference amount actually added if recorded, else the planned one. */
+export function effectiveRefMmol(rxn: Reaction): number {
+  const ref = rxn.components.find((c) => c.id === rxn.refId);
+  const a = ref ? actualMmol(ref) : undefined;
+  return pos(a) ? a : rxn.refMmol;
 }
 
 /** mass/volume that must be dispensed to deliver `mmol` of active compound. */
@@ -225,11 +282,12 @@ export function scale(rxn: Reaction, factor: number): Reaction {
   return {
     ...rxn,
     refMmol: rxn.refMmol * factor,
-    components: rxn.components.map((c) =>
+    // Recorded actual amounts / isolated masses no longer match the new scale.
+    components: rxn.components.map(({ actualAmount: _a, ...c }) =>
       c.role === 'solvent' && pos(c.solventVolume)
         ? { ...c, solventVolume: c.solventVolume * factor }
         : c.role === 'product'
-          ? { ...c, actualMass: undefined } // an isolated mass no longer matches the new scale
+          ? { ...c, actualMass: undefined }
           : c,
     ),
   };
@@ -337,5 +395,15 @@ export function newComponent(p: Partial<Component> & { name: string; role: Role 
 }
 
 export function emptyReaction(): Reaction {
-  return { schemaVersion: REACTION_SCHEMA, title: '', refId: null, refMmol: 1, components: [] };
+  const d = new Date();
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return {
+    schemaVersion: REACTION_SCHEMA,
+    title: '',
+    refId: null,
+    refMmol: 1,
+    components: [],
+    runs: [{ id: 'r1', seq: 1, status: 'planned', date, createdAt: Date.now() }],
+    activeRunId: 'r1',
+  };
 }

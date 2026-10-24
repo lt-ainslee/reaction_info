@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { pendingLocalUploads, reactionFromFile, repo, uploadLocalReactions, type SavedSummary } from '../storage';
+import { saveBlob } from '../attachments/pack';
+import { exportAll, restore } from '../storage/backup';
 
 interface Props {
   currentId?: string;
@@ -19,6 +21,19 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
   const [error, setError] = useState(false);
   const [fileError, setFileError] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const backupRef = useRef<HTMLInputElement>(null);
+  const [backupMsg, setBackupMsg] = useState<string | null>(null);
+
+  const doExport = async () => {
+    try {
+      const { blob, reactions, lots } = await exportAll((a, b) => setBackupMsg(t.backup.exporting.replace('{a}', String(a)).replace('{b}', String(b))));
+      saveBlob(blob, `reaction-info-backup-${new Date().toISOString().slice(0, 10)}.json`);
+      setBackupMsg(null);
+      onNotify(t.backup.exported.replace('{n}', String(reactions)).replace('{m}', String(lots)));
+    } catch {
+      setBackupMsg(t.loadFailed);
+    }
+  };
 
   const [pendingUpload, setPendingUpload] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -75,10 +90,13 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
                 }}
               >
                 <strong>
+                  {s.meta?.code && <span className="saved-code">{s.meta.code}</span>}
                   {s.title || '—'}
                   {s.id === currentId && <em className="muted"> · {t.editing}</em>}
                 </strong>
                 <small>
+                  {s.meta && s.meta.runs > 1 && <>{t.runs.count.replace('{n}', String(s.meta.runs))} · </>}
+                  {s.meta?.bestYield !== undefined && <>{t.runs.best.replace('{y}', String(s.meta.bestYield))} · </>}
                   {new Date(s.updatedAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en')}
                   {s.owner && ` · ${s.owner}`}
                 </small>
@@ -104,6 +122,29 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
           ))}
           <div className="saved-footer">
             <button className="ghost small" onClick={() => fileRef.current?.click()}>📂 {t.openFromFile}</button>
+            <button className="ghost small" onClick={doExport}>{t.backup.exportAll}</button>
+            <button className="ghost small" onClick={() => backupRef.current?.click()}>{t.backup.restore}</button>
+            {backupMsg && <span className="muted small">{backupMsg}</span>}
+            <input
+              ref={backupRef}
+              type="file"
+              hidden
+              accept=".json,application/json"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                e.target.value = '';
+                if (!f) return;
+                try {
+                  const res = await restore(await f.text());
+                  if (!res) return setBackupMsg(t.backup.invalid);
+                  setBackupMsg(null);
+                  onNotify(t.backup.restored.replace('{n}', String(res.reactions)).replace('{m}', String(res.lots)));
+                  refresh();
+                } catch {
+                  setBackupMsg(t.loadFailed);
+                }
+              }}
+            />
             {fileError && <span className="warn small">{t.badFile}</span>}
             <input
               ref={fileRef}

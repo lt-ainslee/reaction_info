@@ -61,8 +61,14 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export const listAttachments = (reactionId: string) =>
-  call<Attachment[]>(`/api/reactions/${encodeURIComponent(reactionId)}/attachments`);
+/**
+ * Attachments belong to an owner: a reaction id, or "lot:<lot id>" for a
+ * reagent lot's identity spectra. `rid` parameters below accept either.
+ */
+export const ownerBase = (owner: string) =>
+  owner.startsWith('lot:') ? `/api/lots/${encodeURIComponent(owner.slice(4))}` : `/api/reactions/${encodeURIComponent(owner)}`;
+
+export const listAttachments = (owner: string) => call<Attachment[]>(`${ownerBase(owner)}/attachments`);
 
 export const updateAttachment = (
   id: string,
@@ -76,7 +82,7 @@ export const updateAttachment = (
 
 export const deleteAttachment = (id: string) => call<void>(`/api/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
-const rpath = (rid: string, what: string) => `/api/reactions/${encodeURIComponent(rid)}/${what}`;
+const rpath = (rid: string, what: string) => `${ownerBase(rid)}/${what}`;
 const jsonInit = (method: string, body: unknown): RequestInit => ({
   method,
   headers: { 'Content-Type': 'application/json' },
@@ -115,7 +121,7 @@ export async function uploadAttachment(
   const sha256 = await sha256Hex(data);
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `/api/reactions/${encodeURIComponent(reactionId)}/attachments`);
+    xhr.open('POST', `${ownerBase(reactionId)}/attachments`);
     xhr.setRequestHeader('Content-Type', data.type || 'application/octet-stream');
     xhr.setRequestHeader('X-Attachment', encodeURIComponent(JSON.stringify({ ...meta, sha256 })));
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);

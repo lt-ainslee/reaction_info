@@ -1,32 +1,44 @@
 // "Characterization & spectra" card: a node graph (desktop) or indented list
-// (mobile) of a reaction's attachments — product → sample → raw Bruker data →
-// MNova / PDF / peak lists — plus the SI characterization text for each product.
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// (mobile). Left to right: every compound of the current run → its reagent lot
+// (identity spectra shared by all reactions using the bottle) or, for products,
+// the samples of this run → raw Bruker data → MNova / PDF / peak lists. Plus
+// the SI characterization text for each product.
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   createNode, deleteAttachment, formatSize, getGraph, linkNodes, previewUrl, savePositions, unlinkNodes, updateAttachment,
   type Attachment, type Link,
 } from '../attachments/api';
 import { siPrefix, prettyNucleus, type NmrMeta, type PickedFile } from '../attachments/bruker';
-import { compoundOf, completeness, displayName, indexGraph, nodeTypeOf, relationFor, subtree, treeRows } from '../attachments/graph';
+import { compoundOf, completeness, displayName, indexGraph, nodeTypeOf, relationFor, subtree, wouldCycle, type Index } from '../attachments/graph';
 import { packNodes, saveBlob } from '../attachments/pack';
 import { addPeakList, uploadPicked, type Progress } from '../attachments/uploader';
+import { lotLabel, lotOwner, type ReagentLot, type Verification } from '../chem/lots';
+import { activeRun, runsOf } from '../chem/runs';
 import { updateComponent, type Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
-import { PRODUCT } from './attachmentGraphIds';
+import { lotRepo } from '../storage/lots';
+import type { VNode } from './AttachmentGraph';
 import { AttachmentViewer } from './AttachmentViewer';
 import { NmrMetaLine } from './NmrMetaLine';
 import { NodeInspector, nucleusLabel, type NodeActions } from './NodeInspector';
+import { CompoundInspector, LotInspector } from './VirtualInspector';
 
 const AttachmentGraph = lazy(() => import('./AttachmentGraph'));
 
 interface Props {
   rxn: Reaction;
-  setRxn: (r: Reaction) => void;
+  setRxn: Dispatch<SetStateAction<Reaction>>;
   /** Saved reaction on the server; attachments need one. */
   reactionId?: string;
   remote: boolean;
   onSave: () => void;
   onNotify: (msg: string) => void;
+  /** Node to select and reveal ("lot:<id>", "cmp:<id>" or an attachment id). */
+  focusNode?: string | null;
+  onFocused?: () => void;
+  /** Open the reagent side panel of a component. */
+  onReagentInfo?: (componentId: string) => void;
+  onOpenReaction?: (id: string) => void;
 }
 
 interface Upload {
@@ -37,6 +49,15 @@ interface Upload {
 
 type View = 'graph' | 'list';
 const VIEW_KEY = 'attachments-view';
+const CMP = 'cmp:';
+const LOT = 'lot:';
+
+/** Where an upload goes: owner (reaction or lot), optional upstream node and compound. */
+interface Target {
+  owner: string;
+  parentId?: string;
+  compoundId?: string;
+}
 
 const IGNORED = /(^|\/)(\.DS_Store|Thumbs\.db|desktop\.ini|\._.*)$/i;
 
@@ -80,10 +101,10 @@ function initialView(): View {
   return typeof window !== 'undefined' && window.matchMedia?.('(min-width: 900px)').matches ? 'graph' : 'list';
 }
 
-export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify }: Props) {
+export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify, focusNode, onFocused, onReagentInfo, onOpenReaction }: Props) {
   const { t } = useI18n();
-  const [nodes, setNodes] = useState<Attachment[] | null>(null);
-  const [links, setLinks] = useState<Link[]>([]);
+  const [graphs, setGraphs] = useState<Record<string, { nodes: Attachment[]; links: Link[] }> | null>(null);
+  const [library, setLibrary] = useState<Map<string, ReagentLot>>(new Map());
   const [error, setError] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [viewing, setViewing] = useState<Attachment | null>(null);
@@ -91,11 +112,22 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
   const [view, setViewState] = useState<View>(initialView);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tidyToken, setTidyToken] = useState(0);
+  const [centerToken, setCenterToken] = useState(0);
   const [packing, setPacking] = useState(false);
+  const [onlyRun, setOnlyRun] = useState(true);
   const folderRef = useRef<HTMLInputElement>(null);
   const filesRef = useRef<HTMLInputElement>(null);
+  const cardRef = useRef<HTMLElement>(null);
+  const target = useRef<Target | null>(null);
+
+  const run = activeRun(rxn);
+  const multiRun = runsOf(rxn).length > 1;
   const products = rxn.components.filter((c) => c.role === 'product');
   const defaultCompound = products.length === 1 ? products[0].id : undefined;
+  // Lots used in this run (their spectra are shown and can be added here).
+  const lotIds = useMemo(() => [...new Set(rxn.components.map((c) => c.lot?.lotId).filter((x): x is string => !!x))], [rxn.components]);
+  const lotKey = lotIds.join(',');
+  const owners = useMemo(() => (reactionId ? [reactionId, ...lotIds.map(lotOwner)] : []), [reactionId, lotKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setView = (v: View) => {
     setViewState(v);
@@ -110,23 +142,99 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
     if (!reactionId || !remote) return;
     setError(false);
     try {
-      const g = await getGraph(reactionId);
-      setNodes(g.nodes);
-      setLinks(g.links);
+      const [all, lots] = await Promise.all([
+        Promise.all(owners.map(async (o) => [o, await getGraph(o)] as const)),
+        lotIds.length ? lotRepo.list() : Promise.resolve([] as ReagentLot[]),
+      ]);
+      setGraphs(Object.fromEntries(all));
+      setLibrary(new Map(lots.map((l) => [l.id, l])));
     } catch {
       setError(true);
     }
-  }, [reactionId, remote]);
+  }, [reactionId, remote, owners]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    setNodes(null);
-    setLinks([]);
+    setGraphs(null);
     setSelectedId(null);
+  }, [reactionId]);
+  useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const ix = useMemo(() => indexGraph(nodes ?? [], links), [nodes, links]);
-  const selected = selectedId ? ix.byId.get(selectedId) : undefined;
+  const allNodes = useMemo(() => Object.values(graphs ?? {}).flatMap((g) => g.nodes), [graphs]);
+  const allLinks = useMemo(() => Object.values(graphs ?? {}).flatMap((g) => g.links), [graphs]);
+  const ixAll = useMemo(() => indexGraph(allNodes, allLinks), [allNodes, allLinks]);
+  const isRoot = (ix: Index, id: string) => !(ix.parents.get(id) ?? []).length;
+
+  // "Current run only": hide this reaction's top-level nodes recorded for another run (and what hangs below them).
+  const nodes = useMemo(() => {
+    if (!onlyRun || !multiRun) return allNodes;
+    const roots = allNodes.filter((n) => isRoot(ixAll, n.id) && !(n.reactionId === reactionId && n.meta.runId && n.meta.runId !== run.id));
+    const keep = new Set<string>();
+    const stack = roots.map((n) => n.id);
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (keep.has(id)) continue;
+      keep.add(id);
+      stack.push(...(ixAll.children.get(id) ?? []));
+    }
+    return allNodes.filter((n) => keep.has(n.id));
+  }, [allNodes, ixAll, onlyRun, multiRun, reactionId, run.id]);
+  const links = useMemo(() => {
+    const ids = new Set(nodes.map((n) => n.id));
+    return allLinks.filter((l) => ids.has(l.from) && ids.has(l.to));
+  }, [nodes, allLinks]);
+  const ix = useMemo(() => indexGraph(nodes, links), [nodes, links]);
+  const ownNodes = (owner: string) => allNodes.filter((n) => n.reactionId === owner);
+  const hiddenCount = allNodes.length - nodes.length;
+
+  /** Compound and lot nodes of the current run. */
+  const virtual = useMemo<VNode[]>(() => {
+    const roots = nodes.filter((n) => isRoot(ix, n.id));
+    const out: VNode[] = [];
+    const lotsDone = new Set<string>();
+    for (const c of rxn.components) {
+      const mine = roots.filter((n) => n.reactionId === reactionId && n.compoundId === c.id).map((n) => n.id);
+      const lotId = c.lot?.lotId;
+      if (c.role === 'solvent' && !mine.length && !lotId) continue;
+      out.push({
+        id: CMP + c.id,
+        kind: 'compound',
+        strip: t.roles[c.role],
+        title: c.name,
+        sub: [c.formula, c.lot && lotLabel(c.lot, t.lots.made)].filter(Boolean).join(' · '),
+        cls: 't-c-' + c.role,
+        targets: [...mine, ...(lotId ? [LOT + lotId] : [])],
+      });
+      if (lotId && !lotsDone.has(lotId)) {
+        lotsDone.add(lotId);
+        const lib = library.get(lotId);
+        const info = { ...c.lot, ...(lib ?? {}) };
+        const files = lib?.attachments ?? 0;
+        out.push({
+          id: LOT + lotId,
+          kind: 'lot',
+          strip: t.att.lotNode,
+          title: lotLabel(info, t.lots.made) || t.lots.unnamed,
+          sub: [t.lots.verifications[info.verification ?? 'unverified'], files ? t.lots.files.replace('{n}', String(files)) : ''].filter(Boolean).join(' · '),
+          cls: 't-lot',
+          status: info.verification ?? 'unverified',
+          targets: roots.filter((n) => n.reactionId === lotOwner(lotId)).map((n) => n.id),
+        });
+      }
+    }
+    return out;
+  }, [rxn.components, nodes, ix, reactionId, library, t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reveal a node asked for from outside (e.g. "identity spectra" in the side panel).
+  useEffect(() => {
+    if (!focusNode) return;
+    setSelectedId(focusNode);
+    if (view !== 'graph') setView('graph');
+    setCenterToken((x) => x + 1);
+    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    onFocused?.();
+  }, [focusNode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const progress: Progress = {
     start: (name) => {
@@ -139,14 +247,34 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
     },
   };
 
-  const upload = async (picked: PickedFile[], parentId?: string) => {
-    if (!reactionId || !picked.length) return;
+  const defaultTarget = (): Target | null => (reactionId ? { owner: reactionId, compoundId: defaultCompound } : null);
+
+  /** Upload target for a node id (attachment, compound or lot). */
+  const targetFor = (id: string | null): Target | null => {
+    if (!reactionId) return null;
+    if (!id) return defaultTarget();
+    if (id.startsWith(CMP)) return { owner: reactionId, compoundId: id.slice(CMP.length) };
+    if (id.startsWith(LOT)) {
+      const lotId = id.slice(LOT.length);
+      if (!library.has(lotId)) {
+        onNotify(t.lots.noLotForUpload);
+        return null;
+      }
+      return { owner: lotOwner(lotId) };
+    }
+    const n = ixAll.byId.get(id);
+    return n ? { owner: n.reactionId, parentId: n.id } : defaultTarget();
+  };
+
+  const upload = async (picked: PickedFile[], to: Target | null) => {
+    if (!to || !picked.length) return;
     try {
       const { count, autoLinked } = await uploadPicked(picked, {
-        reactionId,
-        nodes: nodes ?? [],
-        compoundId: defaultCompound,
-        parentId,
+        reactionId: to.owner,
+        runId: to.owner === reactionId ? run.id : undefined,
+        nodes: ownNodes(to.owner),
+        compoundId: to.parentId ? undefined : to.compoundId,
+        parentId: to.parentId,
         progress,
       });
       if (count) onNotify(t.att.uploaded.replace('{n}', String(count)));
@@ -157,7 +285,16 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
     refresh();
   };
 
-  const replaceNode = (next: Attachment) => setNodes((l) => l?.map((x) => (x.id === next.id ? next : x)) ?? null);
+  /** Open the file / folder picker for a target. */
+  const pick = (to: Target | null, folder: boolean) => {
+    if (!to) return;
+    target.current = to;
+    (folder ? folderRef : filesRef).current?.click();
+  };
+
+  const patchGraph = (owner: string, f: (g: { nodes: Attachment[]; links: Link[] }) => { nodes: Attachment[]; links: Link[] }) =>
+    setGraphs((gs) => (gs && gs[owner] ? { ...gs, [owner]: f(gs[owner]) } : gs));
+  const replaceNode = (next: Attachment) => patchGraph(next.reactionId, (g) => ({ ...g, nodes: g.nodes.map((x) => (x.id === next.id ? next : x)) }));
 
   const guard = async (fn: () => Promise<unknown>) => {
     try {
@@ -169,42 +306,65 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
     }
   };
 
+  const canConnect = useCallback(
+    (from: string, to: string) => {
+      const b = ixAll.byId.get(to);
+      if (!b) return false;
+      if (from.startsWith(CMP)) return b.reactionId === reactionId;
+      if (from.startsWith(LOT)) return false;
+      const a = ixAll.byId.get(from);
+      return !!a && a.reactionId === b.reactionId && !wouldCycle(ixAll, from, to);
+    },
+    [ixAll, reactionId],
+  );
+
   const connect = (from: string, to: string) =>
     guard(async () => {
-      if (from.startsWith(PRODUCT)) {
-        replaceNode(await updateAttachment(to, { compoundId: from.slice(PRODUCT.length) }));
+      const a = ixAll.byId.get(from);
+      const b = ixAll.byId.get(to);
+      if (!b) return;
+      if (from.startsWith(CMP)) {
+        replaceNode(await updateAttachment(to, { compoundId: from.slice(CMP.length) }));
         return;
       }
-      const a = ix.byId.get(from);
-      const b = ix.byId.get(to);
-      if (!a || !b || !reactionId) return;
-      const link = await linkNodes(reactionId, { from, to, relation: relationFor(nodeTypeOf(a), nodeTypeOf(b)) });
-      setLinks((ls) => [...ls.filter((l) => !(l.from === from && l.to === to)), link]);
+      if (!a) return;
+      if (a.reactionId !== b.reactionId) return onNotify(t.att.crossOwner);
+      const link = await linkNodes(a.reactionId, { from, to, relation: relationFor(nodeTypeOf(a), nodeTypeOf(b)) });
+      patchGraph(a.reactionId, (g) => ({ ...g, links: [...g.links.filter((l) => !(l.from === from && l.to === to)), link] }));
     });
 
   const disconnect = (from: string, to: string) =>
     guard(async () => {
-      if (from.startsWith(PRODUCT)) {
-        replaceNode(await updateAttachment(to, { compoundId: null }));
+      if (from.startsWith(LOT) || to.startsWith(LOT)) return; // follows the reagent info, not the canvas
+      const b = ixAll.byId.get(to);
+      if (!b) return;
+      if (from.startsWith(CMP)) {
+        if (b.compoundId === from.slice(CMP.length)) replaceNode(await updateAttachment(to, { compoundId: null }));
         return;
       }
-      if (!reactionId) return;
-      await unlinkNodes(reactionId, from, to);
-      setLinks((ls) => ls.filter((l) => !(l.from === from && l.to === to)));
+      await unlinkNodes(b.reactionId, from, to);
+      patchGraph(b.reactionId, (g) => ({ ...g, links: g.links.filter((l) => !(l.from === from && l.to === to)) }));
     });
 
   const move = (positions: Record<string, [number, number]>) => {
-    if (!reactionId) return;
-    setNodes((l) => l?.map((n) => (positions[n.id] ? { ...n, pos: positions[n.id] } : n)) ?? null);
-    savePositions(reactionId, positions).catch(() => setError(true));
+    const byOwner = new Map<string, Record<string, [number, number]>>();
+    for (const [id, p] of Object.entries(positions)) {
+      const n = ixAll.byId.get(id);
+      if (!n) continue;
+      byOwner.set(n.reactionId, { ...(byOwner.get(n.reactionId) ?? {}), [id]: p });
+    }
+    for (const [owner, pos] of byOwner) {
+      patchGraph(owner, (g) => ({ ...g, nodes: g.nodes.map((n) => (pos[n.id] ? { ...n, pos: pos[n.id] } : n)) }));
+      savePositions(owner, pos).catch(() => setError(true));
+    }
   };
 
   const newSample = () => {
     const name = prompt(t.att.newSamplePrompt)?.trim();
     if (!name || !reactionId) return;
     guard(async () => {
-      const n = await createNode(reactionId, { nodeType: 'sample', label: name, compoundId: defaultCompound });
-      setNodes((l) => [...(l ?? []), n]);
+      const n = await createNode(reactionId, { nodeType: 'sample', label: name, compoundId: defaultCompound, meta: { runId: run.id } });
+      patchGraph(reactionId, (g) => ({ ...g, nodes: [...g.nodes, n] }));
       setSelectedId(n.id);
     });
   };
@@ -217,6 +377,20 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
     setRxn(updateComponent(rxn, productId, { characterization: cur + sep + text }));
   };
 
+  /** Identity check of a lot, edited on its node: library + this run's snapshots. */
+  const setVerification = (lotId: string, verification: Verification | undefined, verificationNote: string | undefined) => {
+    const lib = library.get(lotId);
+    if (!lib) return;
+    guard(async () => {
+      const saved = await lotRepo.save({ ...lib, verification, verificationNote });
+      setLibrary((m) => new Map(m).set(lotId, { ...saved, attachments: lib.attachments }));
+      setRxn((r) => ({
+        ...r,
+        components: r.components.map((c) => (c.lot?.lotId === lotId ? { ...c, lot: { ...c.lot, verification, verificationNote } } : c)),
+      }));
+    });
+  };
+
   const actions: NodeActions = {
     open: (n) => n.hasFile && setViewing(n),
     patch: (n, p) => guard(async () => replaceNode(await updateAttachment(n.id, p))),
@@ -224,25 +398,26 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
       if (!confirm(t.att.deleteNode.replace('{name}', displayName(n)))) return;
       guard(async () => {
         await deleteAttachment(n.id);
-        setNodes((l) => l?.filter((x) => x.id !== n.id) ?? null);
-        setLinks((ls) => ls.filter((l) => l.from !== n.id && l.to !== n.id));
+        patchGraph(n.reactionId, (g) => ({
+          nodes: g.nodes.filter((x) => x.id !== n.id),
+          links: g.links.filter((l) => l.from !== n.id && l.to !== n.id),
+        }));
         if (selectedId === n.id) setSelectedId(null);
       });
     },
-    addFiles: (parent, files) => upload(fromInput(files), parent.id),
+    addFiles: (parent, files) => upload(fromInput(files), { owner: parent.reactionId, parentId: parent.id }),
     addPeakList: (parent) =>
       guard(async () => {
-        if (!reactionId) return;
         const nuc = nucleusLabel(parent);
-        const n = await addPeakList(reactionId, parent.id, t.att.peakListLabel.replace('{nuc}', nuc).trim());
+        const n = await addPeakList(parent.reactionId, parent.id, t.att.peakListLabel.replace('{nuc}', nuc).trim());
         await refresh();
         setSelectedId(n.id);
       }),
     pack: async (n) => {
       setPacking(true);
       try {
-        const ids = subtree(ix, n.id);
-        const blob = await packNodes(ids.map((id) => ix.byId.get(id)!).filter(Boolean));
+        const ids = subtree(ixAll, n.id);
+        const blob = await packNodes(ids.map((id) => ixAll.byId.get(id)!).filter(Boolean));
         saveBlob(blob, `${displayName(n).replace(/\.[^.]*$/, '').replace(/[\\/:*?"<>|]/g, '_')}.zip`);
       } catch (e) {
         onNotify(String((e as Error).message ?? e));
@@ -251,20 +426,20 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
       }
     },
     insertCharac: (n, text) => {
-      const cid = compoundOf(ix, n.id);
+      const cid = compoundOf(ixAll, n.id);
       if (!cid) return;
       // A bare peak list gets the header of the spectrum it came from.
-      const nmr = (ix.parents.get(n.id) ?? []).map((id) => ix.byId.get(id)).find((p) => p?.kind === 'nmr');
+      const nmr = (ixAll.parents.get(n.id) ?? []).map((id) => ixAll.byId.get(id)).find((p) => p?.kind === 'nmr');
       const prefix = nmr && !/NMR/i.test(text) ? siPrefix(nmr.meta as unknown as NmrMeta) : undefined;
       insertCharac(cid, prefix ? prefix + text.replace(/^δ\s*/, '') : text);
     },
     select: setSelectedId,
   };
 
-  /** SI prefixes from 1D NMR experiments belonging to this product (or to no product). */
+  /** SI prefixes from 1D NMR experiments of this reaction belonging to the product (or to no compound). */
   const nmrFor = (productId: string) =>
-    (nodes ?? [])
-      .filter((a) => a.kind === 'nmr' && nodeTypeOf(a) === 'source')
+    nodes
+      .filter((a) => a.reactionId === reactionId && a.kind === 'nmr' && nodeTypeOf(a) === 'source')
       .filter((a) => {
         const cid = compoundOf(ix, a.id);
         return cid === productId || !cid;
@@ -273,15 +448,109 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
       .filter((x): x is string => !!x);
 
   const canUpload = remote && !!reactionId;
-  const has = !!nodes && nodes.length > 0;
-  const rows = useMemo(() => (nodes ? treeRows(ix, nodes) : []), [ix, nodes]);
+  const has = !!graphs && (allNodes.length > 0 || virtual.some((v) => v.kind === 'lot'));
   const nameOf = (id: string) => {
-    const n = ix.byId.get(id);
+    const n = ixAll.byId.get(id);
     return n ? displayName(n) : id;
   };
+  const filesUnder = (ids: string[]) => ids.reduce((sum, id) => sum + subtree(ix, id).filter((x) => ix.byId.get(x)?.hasFile).length, 0);
+
+  // List view: compounds, their lots and nodes, indented like the graph.
+  const rows = useMemo(() => {
+    type R = { kind: 'v'; v: VNode; depth: number } | { kind: 'n'; node: Attachment; depth: number; alsoFrom: string[] };
+    const out: R[] = [];
+    const placed = new Set<string>();
+    const visit = (id: string, depth: number) => {
+      const n = ix.byId.get(id);
+      if (!n || placed.has(id)) return;
+      placed.add(id);
+      out.push({ kind: 'n', node: n, depth, alsoFrom: (ix.parents.get(id) ?? []).slice(1) });
+      for (const c of ix.children.get(id) ?? []) if ((ix.parents.get(c) ?? [])[0] === id) visit(c, depth + 1);
+    };
+    const vById = new Map(virtual.map((v) => [v.id, v]));
+    for (const v of virtual.filter((x) => x.kind === 'compound')) {
+      out.push({ kind: 'v', v, depth: 0 });
+      for (const to of v.targets) {
+        const lot = vById.get(to);
+        if (lot) {
+          out.push({ kind: 'v', v: lot, depth: 1 });
+          for (const r of lot.targets) visit(r, 2);
+        } else visit(to, 1);
+      }
+    }
+    for (const n of nodes) if (isRoot(ix, n.id)) visit(n.id, 0);
+    return out;
+  }, [virtual, ix, nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedAtt = selectedId ? ixAll.byId.get(selectedId) : undefined;
+  const selectedV = selectedId ? virtual.find((v) => v.id === selectedId) : undefined;
+  const compOfV = (v: VNode) =>
+    v.kind === 'compound'
+      ? rxn.components.find((c) => CMP + c.id === v.id)
+      : rxn.components.find((c) => c.lot?.lotId && LOT + c.lot.lotId === v.id);
+
+  const inspector = () => {
+    if (selectedAtt) {
+      const own = selectedAtt.reactionId === reactionId;
+      return (
+        <NodeInspector
+          node={selectedAtt}
+          ix={ixAll}
+          products={own ? rxn.components : []}
+          compoundId={compoundOf(ixAll, selectedAtt.id)}
+          packing={packing}
+          actions={actions}
+        />
+      );
+    }
+    if (selectedV) {
+      const c = compOfV(selectedV);
+      if (!c) return null;
+      if (selectedV.kind === 'compound')
+        return (
+          <CompoundInspector
+            c={c}
+            files={filesUnder(selectedV.targets.filter((x) => !x.startsWith(LOT)))}
+            onUpload={(folder) => pick({ owner: reactionId!, compoundId: c.id }, folder)}
+            onReagentInfo={() => onReagentInfo?.(c.id)}
+          />
+        );
+      const lotId = selectedV.id.slice(LOT.length);
+      const lib = library.get(lotId);
+      return (
+        <LotInspector
+          snapshot={c.lot ?? {}}
+          lot={lib}
+          compoundName={c.name}
+          files={filesUnder(selectedV.targets)}
+          onUpload={(folder) => pick(targetFor(selectedV.id), folder)}
+          onVerification={(v, note) => setVerification(lotId, v, note)}
+          onReagentInfo={() => onReagentInfo?.(c.id)}
+          onOpenSource={c.lot?.source === 'made' && c.lot.sourceReactionId ? () => onOpenReaction?.(c.lot!.sourceReactionId!) : undefined}
+        />
+      );
+    }
+    return <p className="muted small insp-empty">{t.att.selectHint}</p>;
+  };
+
+  const fileInput = (folder: boolean) => (
+    <input
+      ref={folder ? folderRef : filesRef}
+      type="file"
+      hidden
+      multiple
+      {...(folder ? { webkitdirectory: '' } : {})}
+      onChange={(e) => {
+        if (e.target.files) upload(fromInput(e.target.files), target.current ?? defaultTarget());
+        target.current = null;
+        e.target.value = '';
+      }}
+    />
+  );
 
   return (
     <section
+      ref={cardRef}
       className={'card attachments' + (dragging ? ' dragging' : '')}
       onDragOver={(e) => {
         if (!canUpload || ![...e.dataTransfer.types].includes('Files')) return;
@@ -293,13 +562,19 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
         if (!canUpload || ![...e.dataTransfer.types].includes('Files')) return;
         e.preventDefault();
         setDragging(false);
-        upload(await fromDrop(e.dataTransfer));
+        upload(await fromDrop(e.dataTransfer), defaultTarget());
       }}
     >
       <div className="card-head">
         <h2>{t.att.title}</h2>
         {canUpload && (
           <div className="toolbar no-print">
+            {has && multiRun && (
+              <label className="check small" title={hiddenCount ? `${hiddenCount}` : undefined}>
+                <input type="checkbox" checked={onlyRun} onChange={(e) => setOnlyRun(e.target.checked)} />
+                {t.att.onlyRun}
+              </label>
+            )}
             {has && (
               <div className="seg" role="group">
                 <button className={view === 'graph' ? 'on' : ''} onClick={() => setView('graph')}>{t.att.viewGraph}</button>
@@ -308,30 +583,10 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
             )}
             {has && view === 'graph' && <button className="ghost" onClick={() => setTidyToken((x) => x + 1)}>{t.att.tidy}</button>}
             <button className="ghost" onClick={newSample}>+ {t.att.newSample}</button>
-            <button onClick={() => folderRef.current?.click()}>{t.att.uploadFolder}</button>
-            <button className="ghost" onClick={() => filesRef.current?.click()}>{t.att.uploadFiles}</button>
-            <input
-              ref={folderRef}
-              type="file"
-              hidden
-              multiple
-              // @ts-expect-error non-standard but supported by all current browsers
-              webkitdirectory=""
-              onChange={(e) => {
-                if (e.target.files) upload(fromInput(e.target.files));
-                e.target.value = '';
-              }}
-            />
-            <input
-              ref={filesRef}
-              type="file"
-              hidden
-              multiple
-              onChange={(e) => {
-                if (e.target.files) upload(fromInput(e.target.files));
-                e.target.value = '';
-              }}
-            />
+            <button onClick={() => pick(defaultTarget(), true)}>{t.att.uploadFolder}</button>
+            <button className="ghost" onClick={() => pick(defaultTarget(), false)}>{t.att.uploadFiles}</button>
+            {fileInput(true)}
+            {fileInput(false)}
           </div>
         )}
       </div>
@@ -361,24 +616,51 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
           {view === 'graph' ? (
             <Suspense fallback={<div className="graph-wrap graph-loading">…</div>}>
               <AttachmentGraph
-                reactionId={reactionId!}
-                nodes={nodes!}
+                nodes={nodes}
                 links={links}
                 ix={ix}
-                products={products}
+                virtual={virtual}
+                posKey={`graph-vpos-${reactionId}`}
                 selectedId={selectedId}
                 tidyToken={tidyToken}
+                centerToken={centerToken}
+                canConnect={canConnect}
                 onSelect={setSelectedId}
                 onOpen={actions.open}
                 onConnect={connect}
                 onDisconnect={disconnect}
                 onMove={move}
-                onDrop={async (id, dt) => upload(await fromDrop(dt), id ?? undefined)}
+                onDrop={async (id, dt) => {
+                  const files = await fromDrop(dt);
+                  upload(files, targetFor(id));
+                }}
               />
             </Suspense>
           ) : (
             <div className="att-tree">
-              {rows.map(({ node: a, depth, alsoFrom }) => {
+              {rows.map((r) => {
+                if (r.kind === 'v') {
+                  const v = r.v;
+                  return (
+                    <div
+                      key={v.id}
+                      className={'att-row att-vrow ' + v.cls + (v.id === selectedId ? ' selected' : '')}
+                      style={{ paddingLeft: `${r.depth * 22 + 8}px` }}
+                      onClick={() => setSelectedId(v.id === selectedId ? null : v.id)}
+                    >
+                      {r.depth > 0 && <span className="att-branch" aria-hidden>└</span>}
+                      <span className="att-type-dot" aria-hidden />
+                      <div className="att-row-main">
+                        <div className="att-row-title">
+                          <span className="att-row-type">{v.strip}</span>
+                          <span>{v.title}</span>
+                        </div>
+                        {v.sub && <div className="att-row-sub muted small">{v.sub}</div>}
+                      </div>
+                    </div>
+                  );
+                }
+                const { node: a, depth, alsoFrom } = r;
                 const type = nodeTypeOf(a);
                 return (
                   <div
@@ -415,30 +697,17 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
               })}
             </div>
           )}
-          <aside className="inspector-wrap no-print">
-            {selected ? (
-              <NodeInspector
-                node={selected}
-                ix={ix}
-                products={products}
-                compoundId={compoundOf(ix, selected.id)}
-                packing={packing}
-                actions={actions}
-              />
-            ) : (
-              <p className="muted small insp-empty">{t.att.selectHint}</p>
-            )}
-          </aside>
+          <aside className="inspector-wrap no-print">{inspector()}</aside>
         </div>
       )}
-      {nodes && nodes.length === 0 && canUpload && <div className="att-empty">{t.att.empty}</div>}
+      {graphs && !has && canUpload && <div className="att-empty">{t.att.empty}</div>}
 
       {products.length > 0 && (
         <div className="charac">
           <h3>{t.att.characterization}</h3>
           {products.map((p) => {
             const prefixes = [...new Set(nmrFor(p.id))];
-            const comp = has ? completeness(ix, nodes!, p.id) : null;
+            const comp = has ? completeness(ix, nodes.filter((n) => n.reactionId === reactionId), p.id) : null;
             return (
               <label key={p.id} className="field">
                 <span>
@@ -477,3 +746,4 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify 
     </section>
   );
 }
+

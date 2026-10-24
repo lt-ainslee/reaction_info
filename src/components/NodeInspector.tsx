@@ -65,7 +65,7 @@ export function NodeInspector({ node, ix, products, compoundId, packing, actions
       {typeof node.meta.title === 'string' && <div className="insp-title">“{node.meta.title}”</div>}
       {node.hasPreview && <img className="insp-preview" src={`/api/attachments/${node.id}/preview`} alt="" onClick={() => actions.open(node)} />}
 
-      {isRoot && (
+      {isRoot && products.length > 0 && (
         <label className="field">
           <span>{t.att.compound}</span>
           <select value={node.compoundId ?? ''} onChange={(e) => actions.patch(node, { compoundId: e.target.value || null })}>

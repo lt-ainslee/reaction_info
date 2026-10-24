@@ -1,3 +1,4 @@
+import type { ReactionMeta } from '../chem/runs';
 import type { Reaction } from '../chem/stoich';
 
 /** What a list of saved reactions shows, without the (possibly large) body. */
@@ -10,6 +11,8 @@ export interface SavedSummary {
   version: number;
   /** Who saved it (remote storage only). */
   owner?: string;
+  /** Reaction code, number of runs, best yield (absent from old servers). */
+  meta?: ReactionMeta;
 }
 
 export interface SavedReaction extends SavedSummary {

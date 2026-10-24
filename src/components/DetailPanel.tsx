@@ -8,6 +8,7 @@ import { isValidSmiles, smilesInfo, smilesToSvg } from '../chem/rdkit';
 import type { Component } from '../chem/stoich';
 import type { OpenEditor } from '../App';
 import { useI18n } from '../i18n';
+import { LotEditor } from './LotEditor';
 import { fmt } from '../units';
 
 
@@ -17,9 +18,13 @@ interface Props {
   openEditor: OpenEditor;
   onUpdate: (p: Partial<Component>) => void;
   onClose: () => void;
+  onNotify: (msg: string) => void;
+  currentReactionId?: string;
+  onShowSpectra?: (lotId: string) => void;
+  onOpenInventory?: () => void;
 }
 
-export function DetailPanel({ c, rd, openEditor, onUpdate, onClose }: Props) {
+export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, currentReactionId, onShowSpectra, onOpenInventory }: Props) {
   const { t, lang } = useI18n();
   const [details, setDetails] = useState<PubChemDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -106,6 +111,9 @@ export function DetailPanel({ c, rd, openEditor, onUpdate, onClose }: Props) {
         <span>{t.rename}</span>
         <input value={c.name} onChange={(e) => onUpdate({ name: e.target.value })} />
       </label>
+      {c.role !== 'product' && (
+        <LotEditor c={c} onUpdate={onUpdate} onNotify={onNotify} currentReactionId={currentReactionId} onShowSpectra={onShowSpectra} onOpenInventory={onOpenInventory} />
+      )}
       {svg && <img className="panel-mol" alt={c.name} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} />}
       <label className="field">
         <span>{t.structure}</span>

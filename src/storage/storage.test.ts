@@ -83,7 +83,7 @@ describe('localRepo', () => {
     const legacy = [{ id: 'abc12345', savedAt: 1700000000000, reaction: sample('Old') }];
     localStorage.setItem('saved-reactions-v1', JSON.stringify(legacy));
     const list = await localRepo.list();
-    expect(list).toEqual([{ id: 'abc12345', title: 'Old', updatedAt: 1700000000000, version: 1 }]);
+    expect(list).toEqual([{ id: 'abc12345', title: 'Old', updatedAt: 1700000000000, version: 1, meta: expect.objectContaining({ runs: 1 }) }]);
     expect(localStorage.getItem('saved-reactions-v1')).not.toBeNull();
     // Later writes go to v2 only.
     await localRepo.update('abc12345', sample('Old 2'), 1);

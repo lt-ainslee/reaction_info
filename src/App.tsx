@@ -1,6 +1,8 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { loadRDKit } from './chem/rdkit';
+import { componentFromLot, type ReagentLot } from './chem/lots';
+import { activeRun, nextCode, runCode, runsOf } from './chem/runs';
 import { groupFragments, parseInputText } from './chem/parseInput';
 import { compoundKey, resolveParsed, type CompoundData, type Resolved } from './chem/resolve';
 import {
@@ -11,16 +13,22 @@ import { CompoundSearch } from './components/CompoundSearch';
 import { DetailPanel } from './components/DetailPanel';
 import Report from './components/Report';
 import { Attachments } from './components/Attachments';
+import { Inventory } from './components/Inventory';
 import { NumInput } from './components/NumInput';
+import { Procedure } from './components/Procedure';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview } from './components/ReactionPreview';
+import { References } from './components/References';
+import { RunBar } from './components/RunBar';
 import { SavedMenu } from './components/SavedMenu';
 import type { StructureEditorProps } from './components/StructureEditor';
 import { StoichTable } from './components/StoichTable';
 import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from './export';
 import { useI18n } from './i18n';
-import { loadDraft, reactionToFile, repoReady, saveDraft, type SavedReaction } from './storage';
+import { loadDraft, reactionToFile, repo, repoReady, saveDraft, type SavedReaction } from './storage';
 import { useSavedDoc } from './storage/useSavedDoc';
+import { saveBlob } from './attachments/pack';
+import { lotRepo } from './storage/lots';
 import { useAutoLookup } from './useAutoLookup';
 import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
 
@@ -50,12 +58,27 @@ export default function App() {
   const [planYield, setPlanYield] = useState<number | undefined>(80);
   const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  /** Graph node to reveal in the attachments card (e.g. a lot from the side panel). */
+  const [focusNode, setFocusNode] = useState<string | null>(null);
   const pending = useAutoLookup(rxn, setRxn, rd);
   const [storage, setStorage] = useState<'local' | 'remote' | null>(null);
   useEffect(() => {
     repoReady.then(setStorage);
   }, []);
   const remote = storage === 'remote';
+
+  // Next free reaction code (from the saved list), offered when the code is empty.
+  const [suggestedCode, setSuggestedCode] = useState('RXN-001');
+  useEffect(() => {
+    if (!storage) return;
+    repo.list().then(
+      (list) => setSuggestedCode(nextCode(list.filter((s) => s.id !== savedId).map((s) => s.meta?.code))),
+      () => undefined,
+    );
+  }, [storage, savedId]);
+  const [showActual, setShowActual] = useState(false);
+  const run = activeRun(rxn);
+  const actualOn = showActual || run.status !== 'planned' || rxn.components.some((c) => c.actualAmount);
 
   useEffect(() => {
     loadRDKit().then(setRd, () => setRdError(true));
@@ -75,6 +98,9 @@ export default function App() {
   };
 
   const add = (data: CompoundData, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...data, role })));
+  /** A bottle from the inventory: structure, physical data, purity / concentration and the lot link. */
+  const addLot = (lot: ReagentLot, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...componentFromLot(lot), role })));
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const applyInput = (res: Resolved, mode: ApplyMode) =>
     setRxn((r) => {
       const explicitEquiv = new Set<string>();
@@ -108,11 +134,13 @@ export default function App() {
 
   /** Save; "save as" asks for a new name and keeps the original. */
   const save = async (asNew: boolean) => {
-    let r = rxn;
+    // A reaction gets the next free code when first saved without one.
+    let r = !savedId && !asNew && !rxn.code?.trim() ? { ...rxn, code: suggestedCode } : rxn;
+    if (r !== rxn) setRxn(r);
     if (asNew) {
       const name = prompt(t.saveAsPrompt, rxn.title ? `${rxn.title} ${t.copySuffix}` : '');
       if (name === null) return;
-      r = { ...rxn, title: name.trim() };
+      r = { ...r, title: name.trim() };
       setRxn(r);
     }
     try {
@@ -134,12 +162,31 @@ export default function App() {
     }
   };
 
+  const [building, setBuilding] = useState(false);
+  /** Word report / Excel workbook of the reaction (generator loaded on demand). */
+  const exportOffice = async (kind: 'word' | 'excel') => {
+    setBuilding(true);
+    try {
+      const [m, lib] = await Promise.all([import('./office/report'), lotRepo.list().catch(() => [])]);
+      const used = new Set(runsOf(rxn).flatMap((r) => r.data.components.map((c) => c.lot?.lotId).filter(Boolean)));
+      const lots = new Map(lib.filter((l) => used.has(l.id)).map((l) => [l.id, l]));
+      const input = { rxn, units, t, rd, lots };
+      if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
+      else saveBlob(m.excelWorkbook(input), `${fileBase}.xlsx`);
+    } catch (e) {
+      console.error(e);
+      notify(t.saveFailed);
+    } finally {
+      setBuilding(false);
+    }
+  };
+
   const confirmDiscard = (what: string) => !dirty || confirm(t.unsaved + ' — ' + what + '?');
 
   const selectedC = rxn.components.find((c) => c.id === selected);
   const product = rxn.components.find((c) => c.role === 'product');
-  const exportLabels = { roles: t.roles, col: t.col, yield: t.yield, actualMass: t.actualMass, conditions: t.conditions, liquid: t.forms.liquid, notes: t.notes };
-  const fileBase = (rxn.title || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
+  const exportLabels = { roles: t.roles, col: t.col, yield: t.yield, actualMass: t.actualMass, actual: t.runs.actual, conditions: t.conditions, liquid: t.forms.liquid, notes: t.notes };
+  const fileBase = ([runCode(rxn, run), rxn.title].filter(Boolean).join(' ') || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
 
   return (
     <div className="shell">
@@ -182,6 +229,7 @@ export default function App() {
               }}
               onDeleted={doc.removed}
             />
+            <button className="ghost" onClick={() => setInventoryOpen(true)}>{t.inv.open}</button>
             <button
               className="ghost"
               onClick={() => {
@@ -202,13 +250,28 @@ export default function App() {
 
       <main className="app">
         <div className="doc-head">
-          <input
-            className="title-input"
-            value={rxn.title}
-            placeholder={t.reactionTitlePh}
-            aria-label={t.reactionTitle}
-            onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
-          />
+          <div className="title-block">
+            <input
+              className="title-input"
+              value={rxn.title}
+              placeholder={t.reactionTitlePh}
+              aria-label={t.reactionTitle}
+              onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
+            />
+            <span className="code-field">
+              <span className="code-label">{t.runs.code}</span>
+              <input
+                className="code-input"
+                value={rxn.code ?? ''}
+                placeholder={t.runs.codePh.replace('{code}', suggestedCode)}
+                aria-label={t.runs.code}
+                onChange={(e) => setRxn({ ...rxn, code: e.target.value || undefined })}
+              />
+              {!rxn.code && (
+                <button className="link small no-print" onClick={() => setRxn({ ...rxn, code: suggestedCode })}>{t.runs.autoCode}</button>
+              )}
+            </span>
+          </div>
           <div className="doc-actions no-print">
             <span className={'save-state ' + (dirty ? 'dirty' : '')}>
               {dirty ? t.unsaved : savedId ? t.savedState : ''}
@@ -231,6 +294,8 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        <RunBar rxn={rxn} setRxn={setRxn} onNotify={notify} suggestedCode={suggestedCode} />
 
         <section className="card">
           <div className="card-head">
@@ -263,7 +328,7 @@ export default function App() {
             </div>
             <div className="input-block">
               <h3>{t.addCompound}</h3>
-              <CompoundSearch rd={rd} onAdd={add} openEditor={openEditor} />
+              <CompoundSearch rd={rd} onAdd={add} onAddLot={addLot} openEditor={openEditor} />
             </div>
           </div>
         </section>
@@ -284,7 +349,15 @@ export default function App() {
                     {t.exportMd}
                   </button>
                   <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
+                  <button disabled={building} title={t.office.word} onClick={() => exportOffice('word')}>Word</button>
+                  <button disabled={building} title={t.office.excel} onClick={() => exportOffice('excel')}>Excel</button>
                 </div>
+                {run.status === 'planned' && (
+                  <label className="check small" title={t.runs.actualTip}>
+                    <input type="checkbox" checked={actualOn} disabled={rxn.components.some((c) => c.actualAmount)} onChange={(e) => setShowActual(e.target.checked)} />
+                    {t.runs.actualToggle}
+                  </label>
+                )}
                 <button onClick={() => setReportOpen(true)}>{t.exportReport}</button>
               </div>
             </div>
@@ -293,6 +366,7 @@ export default function App() {
               units={units}
               onUnits={setUnits}
               pending={pending}
+              showActual={actualOn}
               onChange={setRxn}
               onSelect={setSelected}
               onRemove={(id) => {
@@ -331,6 +405,13 @@ export default function App() {
             remote={remote}
             onSave={() => save(false)}
             onNotify={notify}
+            focusNode={focusNode}
+            onFocused={() => setFocusNode(null)}
+            onReagentInfo={setSelected}
+            onOpenReaction={async (id) => {
+              if (!confirmDiscard(t.load)) return;
+              if (!(await doc.open(id))) notify(t.notFound);
+            }}
           />
         )}
 
@@ -348,13 +429,15 @@ export default function App() {
                   onChange={(e) => setRxn({ ...rxn, conditions: e.target.value })}
                 />
               </label>
-              <label className="field">
+              <div className="field">
                 <span>{t.notes}</span>
-                <textarea rows={3} value={rxn.notes ?? ''} onChange={(e) => setRxn({ ...rxn, notes: e.target.value })} />
-              </label>
+                <Procedure rxn={rxn} setRxn={setRxn} onNotify={notify} />
+              </div>
             </div>
           </section>
         )}
+
+        {rxn.components.length > 0 && <References rxn={rxn} setRxn={setRxn} />}
 
         <footer className="muted small">{t.footer}</footer>
       </main>
@@ -367,8 +450,19 @@ export default function App() {
           openEditor={openEditor}
           onUpdate={(p) => setRxn((r) => updateComponent(r, selectedC.id, p))}
           onClose={() => setSelected(null)}
+          onNotify={notify}
+          currentReactionId={savedId}
+          onOpenInventory={() => {
+            setSelected(null);
+            setInventoryOpen(true);
+          }}
+          onShowSpectra={(lotId) => {
+            setSelected(null);
+            setFocusNode(`lot:${lotId}`);
+          }}
         />
       )}
+      {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={addLot} onNotify={notify} />}
       {flash && <div className="toast">{flash}</div>}
       {reportOpen && (
         <Report rxn={rxn} units={units} rd={rd} reactionId={remote ? savedId : undefined} onChange={setRxn} onClose={() => setReportOpen(false)} />
