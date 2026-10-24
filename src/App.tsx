@@ -1,7 +1,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { loadRDKit } from './chem/rdkit';
-import { activeRun, nextCode, runCode } from './chem/runs';
+import { activeRun, nextCode, runCode, runsOf } from './chem/runs';
 import { groupFragments, parseInputText } from './chem/parseInput';
 import { compoundKey, resolveParsed, type CompoundData, type Resolved } from './chem/resolve';
 import {
@@ -16,6 +16,7 @@ import { NumInput } from './components/NumInput';
 import { Procedure } from './components/Procedure';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview } from './components/ReactionPreview';
+import { References } from './components/References';
 import { RunBar } from './components/RunBar';
 import { SavedMenu } from './components/SavedMenu';
 import type { StructureEditorProps } from './components/StructureEditor';
@@ -24,6 +25,8 @@ import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from '.
 import { useI18n } from './i18n';
 import { loadDraft, reactionToFile, repo, repoReady, saveDraft, type SavedReaction } from './storage';
 import { useSavedDoc } from './storage/useSavedDoc';
+import { saveBlob } from './attachments/pack';
+import { lotRepo } from './storage/lots';
 import { useAutoLookup } from './useAutoLookup';
 import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
 
@@ -53,6 +56,8 @@ export default function App() {
   const [planYield, setPlanYield] = useState<number | undefined>(80);
   const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  /** Graph node to reveal in the attachments card (e.g. a lot from the side panel). */
+  const [focusNode, setFocusNode] = useState<string | null>(null);
   const pending = useAutoLookup(rxn, setRxn, rd);
   const [storage, setStorage] = useState<'local' | 'remote' | null>(null);
   useEffect(() => {
@@ -149,6 +154,25 @@ export default function App() {
       else if (res.outcome === 'copied') notify(t.savedCopyMsg.replace('{name}', name));
     } catch {
       notify(t.saveFailed);
+    }
+  };
+
+  const [building, setBuilding] = useState(false);
+  /** Word report / Excel workbook of the reaction (generator loaded on demand). */
+  const exportOffice = async (kind: 'word' | 'excel') => {
+    setBuilding(true);
+    try {
+      const [m, lib] = await Promise.all([import('./office/report'), lotRepo.list().catch(() => [])]);
+      const used = new Set(runsOf(rxn).flatMap((r) => r.data.components.map((c) => c.lot?.lotId).filter(Boolean)));
+      const lots = new Map(lib.filter((l) => used.has(l.id)).map((l) => [l.id, l]));
+      const input = { rxn, units, t, rd, lots };
+      if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
+      else saveBlob(m.excelWorkbook(input), `${fileBase}.xlsx`);
+    } catch (e) {
+      console.error(e);
+      notify(t.saveFailed);
+    } finally {
+      setBuilding(false);
     }
   };
 
@@ -319,6 +343,8 @@ export default function App() {
                     {t.exportMd}
                   </button>
                   <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
+                  <button disabled={building} title={t.office.word} onClick={() => exportOffice('word')}>Word</button>
+                  <button disabled={building} title={t.office.excel} onClick={() => exportOffice('excel')}>Excel</button>
                 </div>
                 {run.status === 'planned' && (
                   <label className="check small" title={t.runs.actualTip}>
@@ -373,6 +399,13 @@ export default function App() {
             remote={remote}
             onSave={() => save(false)}
             onNotify={notify}
+            focusNode={focusNode}
+            onFocused={() => setFocusNode(null)}
+            onReagentInfo={setSelected}
+            onOpenReaction={async (id) => {
+              if (!confirmDiscard(t.load)) return;
+              if (!(await doc.open(id))) notify(t.notFound);
+            }}
           />
         )}
 
@@ -398,6 +431,8 @@ export default function App() {
           </section>
         )}
 
+        {rxn.components.length > 0 && <References rxn={rxn} setRxn={setRxn} />}
+
         <footer className="muted small">{t.footer}</footer>
       </main>
 
@@ -409,6 +444,12 @@ export default function App() {
           openEditor={openEditor}
           onUpdate={(p) => setRxn((r) => updateComponent(r, selectedC.id, p))}
           onClose={() => setSelected(null)}
+          onNotify={notify}
+          currentReactionId={savedId}
+          onShowSpectra={(lotId) => {
+            setSelected(null);
+            setFocusNode(`lot:${lotId}`);
+          }}
         />
       )}
       {flash && <div className="toast">{flash}</div>}

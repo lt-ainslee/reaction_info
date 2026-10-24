@@ -12,7 +12,10 @@ import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { smilesToSvg } from '../chem/rdkit';
 import { findCid } from '../chem/resolve';
+import type { ReagentLot } from '../chem/lots';
+import { doiUrl, formatReference } from '../chem/refs';
 import { activeRun, runCode } from '../chem/runs';
+import { lotRepo } from '../storage/lots';
 import { compute, dispensedByVolume, type Component, type Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from '../units';
@@ -41,6 +44,13 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
   const run = activeRun(rxn);
   const code = runCode(rxn, run);
   const withActual = rxn.components.some((c) => c.actualAmount);
+  const withLot = rxn.components.filter((c) => c.role !== 'product' && c.lot);
+  const [lots, setLots] = useState<Map<string, ReagentLot>>(new Map());
+  useEffect(() => {
+    if (!withLot.some((c) => c.lot?.lotId)) return;
+    lotRepo.list().then((l) => setLots(new Map(l.map((x) => [x.id, x]))), () => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (reactionId)
@@ -253,6 +263,43 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
             </table>
           </section>
 
+          {withLot.length > 0 && (
+            <section>
+              <h2>{t.office.lots}</h2>
+              <table className="rp-table">
+                <thead>
+                  <tr>
+                    <th>{t.col.name}</th>
+                    <th>{t.lots.supplier}</th>
+                    <th>{t.lots.spec}</th>
+                    <th>{t.lots.catalog} / {t.lots.lot}</th>
+                    <th className="r">{t.col.purity}</th>
+                    <th>{t.lots.verification}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {withLot.map((c) => {
+                    const l = { ...c.lot!, ...(c.lot!.lotId ? lots.get(c.lot!.lotId) ?? {} : {}) };
+                    const ver = l.verification ?? 'unverified';
+                    return (
+                      <tr key={c.id}>
+                        <td className="rp-name">{c.name}</td>
+                        <td>{l.source === 'made' ? `${t.lots.made}${l.sourceLabel ? ` · ${l.sourceLabel}` : ''}` : l.supplier}</td>
+                        <td className="rp-sub">{l.spec}</td>
+                        <td className="rp-sub">{[l.catalogNumber, l.lotNumber].filter(Boolean).join(' / ')}</td>
+                        <td className="r">{[l.purity && `${l.purity}%`, l.molarity && `${l.molarity} M`].filter(Boolean).join(' · ')}</td>
+                        <td>
+                          <span className={'rp-ver v-' + ver}>{t.lots.verifications[ver]}</span>
+                          {l.verificationNote && <div className="rp-sub">{l.verificationNote}</div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </section>
+          )}
+
           {products.length > 0 && (
             <section>
               <h2>{t.roles.product}</h2>
@@ -307,6 +354,13 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
             </section>
           )}
 
+          {!isEmptyDoc(procedure) && (
+            <section>
+              <h2>{t.notes}</h2>
+              <div className="rp-text rp-proc" dangerouslySetInnerHTML={{ __html: toHtml(procedure, { observation: t.proc.observation }) }} />
+            </section>
+          )}
+
           {products.some((p) => p.characterization?.trim()) && (
             <section>
               <h2>{t.att.characterization}</h2>
@@ -341,6 +395,22 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
                   ))}
                 </tbody>
               </table>
+            </section>
+          )}
+
+          {(rxn.references?.length ?? 0) > 0 && (
+            <section>
+              <h2>{t.refs.title}</h2>
+              <ol className="rp-refs">
+                {rxn.references!.map((r) => (
+                  <li key={r.id}>
+                    {formatReference(r)}
+                    {r.doi && <span className="rp-sub"> {doiUrl(r.doi)}</span>}
+                    {!r.doi && r.url && <span className="rp-sub"> {r.url}</span>}
+                    {r.note && <div className="rp-sub">{r.note}</div>}
+                  </li>
+                ))}
+              </ol>
             </section>
           )}
 
@@ -385,12 +455,6 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
             </section>
           )}
 
-          {!isEmptyDoc(procedure) && (
-            <section>
-              <h2>{t.notes}</h2>
-              <div className="rp-text rp-proc" dangerouslySetInnerHTML={{ __html: toHtml(procedure) }} />
-            </section>
-          )}
 
           <footer className="rp-foot">
             <span>{t.appTitle} · {dateText}</span>

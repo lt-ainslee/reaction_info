@@ -17,7 +17,10 @@ export interface Progress {
 }
 
 export interface UploadContext {
+  /** Owner: a reaction id, or "lot:<id>" for a reagent lot. */
   reactionId: string;
+  /** Run the upload belongs to; top-level nodes record it (meta.runId). */
+  runId?: string;
   /** Current graph nodes (to reuse sample nodes and guess parents). */
   nodes: Attachment[];
   /** Product to attach new top-level nodes to. */
@@ -39,11 +42,15 @@ export async function uploadPicked(picked: PickedFile[], ctx: UploadContext): Pr
   const parent = ctx.parentId ? nodes.find((n) => n.id === ctx.parentId) : undefined;
 
   const sampleNode = async (name: string): Promise<Attachment | undefined> => {
-    const existing = nodes.find((n) => nodeTypeOf(n) === 'sample' && displayName(n) === name);
+    // Same sample name in another run is a different sample.
+    const existing = nodes.find(
+      (n) => nodeTypeOf(n) === 'sample' && displayName(n) === name && (!ctx.runId || !n.meta.runId || n.meta.runId === ctx.runId),
+    );
     if (existing) return existing;
     const created = await createNode(reactionId, {
       nodeType: 'sample',
       label: name,
+      meta: !parent && ctx.runId ? { runId: ctx.runId } : undefined,
       compoundId: parent ? undefined : ctx.compoundId,
       parentIds: parent ? [parent.id] : undefined,
     });
@@ -77,7 +84,7 @@ export async function uploadPicked(picked: PickedFile[], ctx: UploadContext): Pr
           kind: 'nmr',
           nodeType: 'source',
           compoundId: up ? undefined : ctx.compoundId,
-          meta: meta ? { ...meta } : {},
+          meta: { ...(meta ?? {}), ...(!up && ctx.runId ? { runId: ctx.runId } : {}) },
           parentIds: up ? [up.id] : undefined,
           relation: up ? relationFor(nodeTypeOf(up), 'source') : undefined,
         },
@@ -113,6 +120,7 @@ export async function uploadPicked(picked: PickedFile[], ctx: UploadContext): Pr
           kind,
           nodeType,
           compoundId: up ? undefined : ctx.compoundId,
+          meta: !up && ctx.runId ? { runId: ctx.runId } : undefined,
           parentIds: up ? [up.id] : undefined,
           relation: up ? relationFor(nodeTypeOf(up), nodeType) : undefined,
         },

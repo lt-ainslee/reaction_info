@@ -112,7 +112,8 @@ export function switchRun(r: Reaction, id: string): Reaction {
 export function freshCopy(data: RunData, copyProcedure: boolean): RunData {
   return {
     ...data,
-    components: data.components.map((c) => ({ ...c, actualMass: undefined, actualAmount: undefined })),
+    // Same bottles (lot) as the source run; what was weighed and obtained starts empty.
+    components: data.components.map((c) => ({ ...c, actualMass: undefined, actualAmount: undefined, actualNote: undefined })),
     notebook: undefined,
     ...(copyProcedure ? {} : { procedure: undefined, notes: undefined }),
   };

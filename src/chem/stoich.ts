@@ -7,6 +7,8 @@
 // (usually the limiting reagent) has equiv 1. Editing any amount, mass or
 // volume is translated back into an equiv (or into refMmol for the reference).
 import type { ProcDoc } from '../procedure/doc';
+import type { LotSnapshot } from './lots';
+import type { Reference } from './refs';
 import type { Run } from './runs';
 
 export type Role = 'reactant' | 'reagent' | 'catalyst' | 'solvent' | 'product';
@@ -46,6 +48,10 @@ export interface Component {
   actualMass?: number;
   /** Inputs: what was actually weighed (mg) or dispensed (µL) in this run. */
   actualAmount?: { mass?: number; volume?: number };
+  /** Inputs: the amount as written in the lab notebook ("1.006 g", "1.95 mL"). */
+  actualNote?: string;
+  /** Inputs: the reagent lot used in this run (snapshot; see chem/lots.ts). */
+  lot?: LotSnapshot;
   /** Product: characterization text as written in SI (¹H NMR …, HRMS …). */
   characterization?: string;
   /** Solvent only: fixed volume in µL… */
@@ -69,6 +75,8 @@ export interface Reaction {
   /** Report header fields. */
   operator?: string;
   notebook?: string;
+  /** Literature for the route (shared by all runs). */
+  references?: Reference[];
   /** Reaction code, e.g. "LT-042"; runs are numbered "LT-042-1", "LT-042-2"… */
   code?: string;
   /** Experiments of this reaction (see chem/runs.ts); the active one's data is the fields above. */

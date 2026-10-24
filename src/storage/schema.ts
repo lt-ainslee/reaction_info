@@ -3,6 +3,8 @@
 // normalizeReaction, so old or hand-edited data is repaired in one place.
 import { REACTION_SCHEMA, type Component, type Form, type Reaction, type Role } from '../chem/stoich';
 import { RUN_STATUSES, withRuns, type Run, type RunData, type RunStatus } from '../chem/runs';
+import { normalizeSnapshot } from '../chem/lots';
+import { normalizeReferences } from '../chem/refs';
 import { asProcDoc } from '../procedure/doc';
 import { newId } from './ids';
 
@@ -18,7 +20,7 @@ function normalizeComponent(raw: unknown): Component | null {
   const name = str(raw.name);
   const role = ROLES.includes(raw.role as Role) ? (raw.role as Role) : null;
   if (name === undefined || !role) return null;
-  return {
+  const c: Component = {
     ...(raw as unknown as Component),
     id: str(raw.id) || newId(),
     name,
@@ -27,6 +29,11 @@ function normalizeComponent(raw: unknown): Component | null {
     purity: num(raw.purity) ?? 100,
     equiv: num(raw.equiv) ?? (role === 'catalyst' ? 0.05 : 1),
   };
+  const lot = normalizeSnapshot(raw.lot);
+  if (lot) c.lot = lot;
+  else delete c.lot;
+  if (c.actualNote !== undefined && typeof c.actualNote !== 'string') delete c.actualNote;
+  return c;
 }
 
 /**
@@ -51,6 +58,9 @@ export function normalizeReaction(raw: unknown): Reaction | null {
   };
   if (!r.procedure) delete r.procedure;
   if (r.code !== undefined && typeof r.code !== 'string') delete r.code;
+  const refs = normalizeReferences(raw.references);
+  if (refs.length) r.references = refs;
+  else delete r.references;
   r.runs = normalizeRuns(raw.runs);
   if (!r.runs.length) delete r.runs;
   return withRuns(r);

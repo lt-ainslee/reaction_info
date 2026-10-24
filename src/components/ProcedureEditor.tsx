@@ -9,6 +9,7 @@ import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/r
 import { StarterKit } from '@tiptap/starter-kit';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChemTypography } from '../procedure/ChemTypography';
+import { Observation } from '../procedure/Observation';
 import { toHtml, toPlainText, type ProcDoc } from '../procedure/doc';
 import { useI18n } from '../i18n';
 
@@ -19,9 +20,9 @@ export interface ProcedureEditorProps {
 }
 
 /** Put a procedure on the clipboard as HTML (keeps sub/superscripts in Word) plus plain text. */
-export async function copyProcedure(doc: ProcDoc) {
-  const html = toHtml(doc);
-  const text = toPlainText(doc);
+export async function copyProcedure(doc: ProcDoc, observation?: string) {
+  const html = toHtml(doc, { observation });
+  const text = toPlainText(doc, { observation });
   if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
     await navigator.clipboard.write([
       new ClipboardItem({ 'text/html': new Blob([html], { type: 'text/html' }), 'text/plain': new Blob([text], { type: 'text/plain' }) }),
@@ -65,6 +66,7 @@ function Toolbar({ editor, full, setFull, onCopy }: { editor: Editor; full: bool
       bullet: e.isActive('bulletList'),
       ordered: e.isActive('orderedList'),
       quote: e.isActive('blockquote'),
+      obs: e.isActive('observation'),
       table: e.isActive('table'),
       undo: e.can().undo(),
       redo: e.can().redo(),
@@ -85,6 +87,7 @@ function Toolbar({ editor, full, setFull, onCopy }: { editor: Editor; full: bool
         <Btn title={p.heading} on={s.heading} onClick={() => c().toggleHeading({ level: 3 }).run()}>H</Btn>
         <Btn title={p.ordered} on={s.ordered} onClick={() => c().toggleOrderedList().run()}>1.</Btn>
         <Btn title={p.bullet} on={s.bullet} onClick={() => c().toggleBulletList().run()}>•</Btn>
+        <Btn title={p.observationTip} on={s.obs} onClick={() => c().toggleObservation().run()}>{p.observation}</Btn>
         <Btn title={p.quote} on={s.quote} onClick={() => c().toggleBlockquote().run()}>❝</Btn>
         <Btn title={p.hr} onClick={() => c().setHorizontalRule().run()}>—</Btn>
         <Btn title={p.table} onClick={() => c().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}>▦</Btn>
@@ -126,6 +129,7 @@ export default function ProcedureEditor({ value, onChange, onNotify }: Procedure
       Superscript,
       TableKit.configure({ table: { resizable: false } }),
       Placeholder.configure({ placeholder: t.proc.ph }),
+      Observation.configure({ label: t.proc.observation }),
       ChemTypography,
     ],
     content: value,
@@ -158,7 +162,7 @@ export default function ProcedureEditor({ value, onChange, onNotify }: Procedure
 
   if (!editor) return null;
   const copy = () =>
-    copyProcedure(editor.getJSON() as ProcDoc).then(
+    copyProcedure(editor.getJSON() as ProcDoc, t.proc.observation).then(
       () => onNotify(t.proc.copied),
       () => onNotify(t.loadFailed),
     );

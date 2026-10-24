@@ -41,12 +41,17 @@ export const procedureOf = (r: { procedure?: unknown; notes?: string }): ProcDoc
 
 export function isEmptyDoc(doc: ProcDoc): boolean {
   const has = (n: PNode): boolean =>
-    (n.type === 'text' && !!n.text?.trim()) || n.type === 'horizontalRule' || n.type === 'image' || (n.content ?? []).some(has);
+    (n.type === 'text' && !!n.text?.trim()) || n.type === 'horizontalRule' || (n.content ?? []).some(has);
   return !has(doc);
 }
 
+/** Labels of special blocks in plain text / HTML output. */
+export interface DocLabels {
+  observation?: string;
+}
+
 /** Plain text (for search, CSV/text export and the clipboard). */
-export function toPlainText(doc: ProcDoc): string {
+export function toPlainText(doc: ProcDoc, labels: DocLabels = {}): string {
   const inline = (n: PNode): string =>
     n.type === 'text' ? n.text ?? '' : n.type === 'hardBreak' ? '\n' : (n.content ?? []).map(inline).join('');
   const block = (n: PNode, prefix = ''): string[] => {
@@ -65,6 +70,11 @@ export function toPlainText(doc: ProcDoc): string {
       }
       case 'blockquote':
         return (n.content ?? []).flatMap((c) => block(c, prefix + '> '));
+      case 'observation': {
+        const lines = (n.content ?? []).flatMap((c) => block(c, prefix));
+        const label = labels.observation ?? '»';
+        return lines.map((l, i) => (i === 0 ? `${prefix}${label}${/[\u4e00-\u9fff]/.test(label) ? '：' : ': '}${l.slice(prefix.length)}` : l));
+      }
       case 'horizontalRule':
         return [prefix + '———'];
       case 'table':
@@ -90,7 +100,7 @@ const MARK_TAGS: Record<string, string> = { bold: 'strong', italic: 'em', underl
  * Escaped HTML with a fixed set of tags — for the report and for copying
  * into Word. Unknown node types render their children only.
  */
-export function toHtml(doc: ProcDoc): string {
+export function toHtml(doc: ProcDoc, labels: DocLabels = {}): string {
   const text = (n: PNode) => {
     let out = esc(n.text ?? '');
     for (const m of n.marks ?? []) {
@@ -129,6 +139,8 @@ export function toHtml(doc: ProcDoc): string {
         return `<li>${kids(n)}</li>`;
       case 'blockquote':
         return `<blockquote>${kids(n)}</blockquote>`;
+      case 'observation':
+        return `<div class="proc-obs"><div class="proc-obs-label">${esc(labels.observation ?? 'Observation')}</div>${kids(n)}</div>`;
       case 'horizontalRule':
         return '<hr>';
       case 'hardBreak':

@@ -2,6 +2,7 @@ import {
   compute, dispensedByVolume, needsDensity, setEquiv, setMass, setMmol, setReference, setRole, setVolume, updateComponent,
   type Component, type Computed, type Phase, type Reaction, type Role,
 } from '../chem/stoich';
+import { hasLotInfo, lotLabel } from '../chem/lots';
 import { useI18n } from '../i18n';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from '../units';
 import { NumInput } from './NumInput';
@@ -77,6 +78,18 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
               {c.id === rxn.refId && withRef && <span className="badge">{t.col.ref}</span>}
             </span>
             {pending.has(c.id) && <span className="lookup">{t.lookingUp}</span>}
+            {withRef && c.role !== 'solvent' && (
+              <button className={'lot-chip' + (hasLotInfo(c.lot) ? ' has' : '')} onClick={() => onSelect(c.id)} title={t.lots.title}>
+                {hasLotInfo(c.lot) ? (
+                  <>
+                    {c.lot!.verification && <span className={'lot-dot v-' + c.lot!.verification} />}
+                    {lotLabel(c.lot!, t.lots.made) || t.lots.title}
+                  </>
+                ) : (
+                  t.lots.chip
+                )}
+              </button>
+            )}
           </span>
         </div>
       </td>
