@@ -70,3 +70,25 @@ describe('references', () => {
     expect(r.references).toEqual([{ id: 'a', doi: '10.1/x' }]);
   });
 });
+
+describe('inventory', () => {
+  it('turns a bottle into a component ready for the calculator', async () => {
+    const { componentFromLot } = await import('./lots');
+    const d = componentFromLot({
+      id: 'L1', key: 'name:n-buli', name: 'n-BuLi', supplier: 'Energy', spec: '2.5 M in hexanes', molarity: 2.31,
+      compound: { formula: 'C4H9Li', mw: 64.06, form: 'solutionM', molarity: 2.5, solutionDensity: 0.68 }, createdAt: 0, updatedAt: 0,
+    });
+    expect(d).toMatchObject({ name: 'n-BuLi', mw: 64.06, form: 'solutionM', molarity: 2.31, solutionDensity: 0.68, lot: { lotId: 'L1', supplier: 'Energy', molarity: 2.31 } });
+  });
+
+  it('imports spreadsheets with Chinese headers', async () => {
+    const { parseCsv, rowsToLots } = await import('../inventory/importTable');
+    const rows = parseCsv('﻿试剂名称,CAS号,品牌,货号,批号,包装,存放位置,状态,入库日期,备注\n溴苯,108-86-1,Adamas,A1,"P2304",500 g,4号柜B层,在用,2026/3/5,"含, 逗号"\n,,,,,,,,,\n乙酸乙酯,141-78-6,国药,,,"2.5 L",溶剂柜,已用完,,\n');
+    let n = 0;
+    const { lots, fields } = rowsToLots(rows, () => `x${++n}`, 1);
+    expect(fields).toEqual(['name', 'cas', 'supplier', 'catalogNumber', 'lotNumber', 'quantity', 'location', 'status', 'receivedAt', 'note']);
+    expect(lots).toHaveLength(2);
+    expect(lots[0]).toMatchObject({ name: '溴苯', cas: '108-86-1', key: 'cas:108-86-1', supplier: 'Adamas', lotNumber: 'P2304', location: '4号柜B层', status: 'in_stock', receivedAt: '2026-03-05', note: '含, 逗号' });
+    expect(lots[1].status).toBe('empty');
+  });
+});

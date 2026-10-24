@@ -1,11 +1,13 @@
 import type { MainModule } from '@rdkit/rdkit';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { libraryToComponent } from '../chem/library';
+import { available, lotLabel, lotSearchText, type ReagentLot } from '../chem/lots';
 import { hitToData, resolveOne, searchAll, smilesToData, type CompoundData, type SearchResults } from '../chem/resolve';
 import type { OpenEditor } from '../App';
 import { formulaMass } from '../chem/formula';
 import type { Role } from '../chem/stoich';
 import { useI18n } from '../i18n';
+import { useInventory } from '../storage/inventory';
 import { fmt } from '../units';
 
 const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent', 'product'];
@@ -13,10 +15,12 @@ const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent', 'product'];
 interface Props {
   rd: MainModule | null;
   onAdd: (data: CompoundData, role: Role) => void;
+  /** Add a bottle from the inventory. */
+  onAddLot: (lot: ReagentLot, role: Role) => void;
   openEditor: OpenEditor;
 }
 
-export function CompoundSearch({ rd, onAdd, openEditor }: Props) {
+export function CompoundSearch({ rd, onAdd, onAddLot, openEditor }: Props) {
   const { t, lang } = useI18n();
   const [q, setQ] = useState('');
   const [role, setRole] = useState<Role>('reactant');
@@ -26,6 +30,13 @@ export function CompoundSearch({ rd, onAdd, openEditor }: Props) {
   const [mName, setMName] = useState('');
   const [mFormula, setMFormula] = useState('');
   const [mMw, setMMw] = useState('');
+  const inventory = useInventory();
+  // Bottles in the lab matching what is typed (shown before any web search).
+  const stock = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length || !inventory) return [];
+    return inventory.filter((l) => available(l) && words.every((w) => lotSearchText(l).includes(w))).slice(0, 8);
+  }, [q, inventory]);
 
   const run = async () => {
     if (!q.trim()) return;
@@ -100,6 +111,34 @@ export function CompoundSearch({ rd, onAdd, openEditor }: Props) {
             onChange={(e) => setMMw(e.target.value)}
           />
           <button onClick={addManual}>{t.add}</button>
+        </div>
+      )}
+
+      {stock.length > 0 && (
+        <div className="results stock-results">
+          <h4>{t.inv.inStock}</h4>
+          {stock.map((l) => (
+            <ResultItem
+              key={l.id}
+              title={l.name}
+              sub={[
+                lotLabel(l, t.lots.made),
+                l.spec,
+                (l.molarity ?? l.compound?.molarity) && `${l.molarity ?? l.compound?.molarity} M`,
+                l.location && `📍 ${l.location}`,
+                l.remaining,
+                l.status === 'low' ? t.inv.statuses.low : '',
+                l.verification === 'ok' ? `✓ ${t.lots.verifications.ok}` : l.verification === 'issue' ? `⚠ ${t.lots.verifications.issue}` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              onClick={() => {
+                onAddLot(l, role);
+                setQ('');
+                setRes(null);
+              }}
+            />
+          ))}
         </div>
       )}
 

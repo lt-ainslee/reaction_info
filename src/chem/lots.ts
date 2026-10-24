@@ -4,9 +4,25 @@
 // run, so later edits to the library don't rewrite old records. Spectra
 // that identify a lot are attached to the lot, so every reaction using the
 // bottle sees them.
-import type { Component } from './stoich';
+import type { Component, Form, Phase } from './stoich';
 
 export type LotSource = 'commercial' | 'made';
+/** Inventory status of a bottle. */
+export type StockStatus = 'in_stock' | 'low' | 'empty' | 'disposed';
+export const STOCK_STATUSES: StockStatus[] = ['in_stock', 'low', 'empty', 'disposed'];
+
+/** What the calculator needs to use the bottle (copied into a new component). */
+export interface CompoundInfo {
+  formula?: string;
+  mw?: number;
+  cid?: number;
+  density?: number;
+  phase?: Phase;
+  form?: Form;
+  molarity?: number;
+  wtPercent?: number;
+  solutionDensity?: number;
+}
 export type Verification = 'unverified' | 'ok' | 'issue';
 export const VERIFICATIONS: Verification[] = ['unverified', 'ok', 'issue'];
 
@@ -39,6 +55,17 @@ export interface ReagentLot extends LotInfo {
   name: string;
   cas?: string;
   smiles?: string;
+  compound?: CompoundInfo;
+  // Inventory (the bottle on the shelf).
+  location?: string;
+  /** Pack size as bought, e.g. "500 g", "100 mL". */
+  quantity?: string;
+  /** What is left, e.g. "~200 g". */
+  remaining?: string;
+  status?: StockStatus;
+  expiresAt?: string;
+  /** Person responsible. */
+  owner?: string;
   createdAt: number;
   updatedAt: number;
   /** Number of attached files (from the server). */
@@ -84,6 +111,14 @@ export function applyLot(c: Component, lot: ReagentLot | LotSnapshot, lotId?: st
   return p;
 }
 
+const COMPOUND_FIELDS: (keyof CompoundInfo)[] = ['formula', 'mw', 'cid', 'density', 'phase', 'form', 'molarity', 'wtPercent', 'solutionDensity'];
+
+export function compoundInfo(c: Partial<Component>): CompoundInfo {
+  const out: Record<string, unknown> = {};
+  for (const k of COMPOUND_FIELDS) if (c[k] !== undefined && c[k] !== '') out[k] = c[k];
+  return out as CompoundInfo;
+}
+
 /** A library lot from a component's current snapshot. */
 export function lotFromComponent(c: Component, id: string, now = Date.now()): ReagentLot {
   return {
@@ -93,10 +128,44 @@ export function lotFromComponent(c: Component, id: string, now = Date.now()): Re
     name: c.name,
     ...(c.cas ? { cas: c.cas } : {}),
     ...(c.smiles ? { smiles: c.smiles } : {}),
+    compound: compoundInfo(c),
+    status: 'in_stock',
     createdAt: now,
     updatedAt: now,
   };
 }
+
+/** Compound data for a new component taken from a bottle: structure, physical data, purity, the lot link. */
+export function componentFromLot(lot: ReagentLot): Omit<Component, 'id' | 'role' | 'equiv'> {
+  const info = lot.compound ?? {};
+  const base: Omit<Component, 'id' | 'role' | 'equiv'> = {
+    name: lot.name,
+    ...(lot.cas ? { cas: lot.cas } : {}),
+    ...(lot.smiles ? { smiles: lot.smiles } : {}),
+    ...info,
+    ...(info.density ? { densitySource: 'manual' as const } : {}),
+    // Physical data from the inventory: no background PubChem phase/density lookup needed.
+    ...(info.phase || info.density ? { lookup: 'done' as const } : {}),
+    form: info.form ?? 'neat',
+    purity: 100,
+  };
+  return { ...base, ...applyLot(base as Component, lot, lot.id) } as Omit<Component, 'id' | 'role' | 'equiv'>;
+}
+
+/** Whether a bottle holds this compound: same CAS, SMILES or name. */
+export function matchesCompound(l: Pick<ReagentLot, 'key' | 'cas' | 'smiles' | 'name'>, c: Pick<Component, 'cas' | 'smiles' | 'name'>): boolean {
+  if (l.key === compoundKey(c)) return true;
+  if (c.cas?.trim() && l.cas?.trim()) return c.cas.trim() === l.cas.trim();
+  if (c.smiles?.trim() && l.smiles?.trim() && c.smiles.trim() === l.smiles.trim()) return true;
+  return !!c.name.trim() && c.name.trim().toLowerCase() === l.name.trim().toLowerCase();
+}
+
+/** Bottles that can be picked: not used up or disposed. */
+export const available = (l: ReagentLot) => l.status !== 'empty' && l.status !== 'disposed';
+
+/** Text an inventory search matches against. */
+export const lotSearchText = (l: ReagentLot) =>
+  [l.name, l.cas, l.compound?.formula, l.supplier, l.catalogNumber, l.lotNumber, l.spec, l.location, l.note].filter(Boolean).join(' ').toLowerCase();
 
 const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.slice(0, 500) : undefined);
 const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? x : undefined);
@@ -136,8 +205,31 @@ export function normalizeLot(raw: unknown): ReagentLot | null {
   const id = r.id;
   const name = str(r.name);
   if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(id) || !name) return null;
+  const c = typeof r.compound === 'object' && r.compound !== null ? (r.compound as Record<string, unknown>) : {};
+  const compound: CompoundInfo = {
+    formula: str(c.formula),
+    mw: num(c.mw),
+    cid: num(c.cid),
+    density: num(c.density),
+    phase: c.phase === 'solid' || c.phase === 'liquid' || c.phase === 'gas' ? c.phase : undefined,
+    form: c.form === 'solutionM' || c.form === 'solutionWt' || c.form === 'neat' ? c.form : undefined,
+    molarity: num(c.molarity),
+    wtPercent: num(c.wtPercent),
+    solutionDensity: num(c.solutionDensity),
+  };
+  const inv = {
+    location: str(r.location),
+    quantity: str(r.quantity),
+    remaining: str(r.remaining),
+    status: STOCK_STATUSES.includes(r.status as StockStatus) ? (r.status as StockStatus) : undefined,
+    expiresAt: typeof r.expiresAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.expiresAt) ? r.expiresAt : undefined,
+    owner: str(r.owner),
+  };
+  const ci = compoundInfo(compound as Partial<Component>);
   return {
     ...normalizeLotInfo(r),
+    ...(Object.fromEntries(Object.entries(inv).filter(([, v]) => v !== undefined)) as Partial<ReagentLot>),
+    ...(Object.keys(ci).length ? { compound: ci } : {}),
     id,
     key: str(r.key) ?? `name:${name.toLowerCase()}`,
     name,

@@ -25,7 +25,7 @@ const outLot = (r: LotRow): ReagentLot => ({
 });
 
 const search = (l: ReagentLot) =>
-  [l.name, l.cas, l.supplier, l.catalogNumber, l.lotNumber, l.spec, l.note].filter(Boolean).join(' ').toLowerCase();
+  [l.name, l.cas, l.supplier, l.catalogNumber, l.lotNumber, l.spec, l.location, l.note].filter(Boolean).join(' ').toLowerCase();
 
 export const lotExists = async (db: D1Database, id: string) =>
   !!(await db.prepare('SELECT 1 FROM reagent_lots WHERE id = ? AND deleted_at IS NULL').bind(id).first());

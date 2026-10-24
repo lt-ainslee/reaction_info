@@ -1,14 +1,14 @@
 // "Reagent used in this run": supplier / grade / catalog / lot number, measured
 // purity or titrated concentration (fed into the calculation), identity check,
 // and the reusable lot library (pick a previous bottle, or save this one).
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  applyLot, compoundKey, lotFromComponent, lotInfo, lotLabel, VERIFICATIONS, type LotSnapshot, type ReagentLot, type Verification,
+  applyLot, available, compoundKey, componentFromLot, lotFromComponent, matchesCompound, lotInfo, lotLabel, VERIFICATIONS, type LotSnapshot, type ReagentLot, type Verification,
 } from '../chem/lots';
 import type { Component } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { newId, repo, type SavedSummary } from '../storage';
-import { lotRepo } from '../storage/lots';
+import { saveToInventory, useInventory } from '../storage/inventory';
 
 interface Props {
   c: Component;
@@ -18,27 +18,26 @@ interface Props {
   currentReactionId?: string;
   /** Show this lot's spectra in the node graph. */
   onShowSpectra?: (lotId: string) => void;
+  /** Open the inventory window. */
+  onOpenInventory?: () => void;
 }
 
-export function LotEditor({ c, onUpdate, onNotify, currentReactionId, onShowSpectra }: Props) {
+export function LotEditor({ c, onUpdate, onNotify, currentReactionId, onShowSpectra, onOpenInventory }: Props) {
   const { t } = useI18n();
   const L = t.lots;
   const lot: LotSnapshot = c.lot ?? {};
-  const [library, setLibrary] = useState<ReagentLot[] | null>(null);
+  const inventory = useInventory();
   const [reactions, setReactions] = useState<SavedSummary[] | null>(null);
   const [busy, setBusy] = useState(false);
   const key = compoundKey(c);
-
-  useEffect(() => {
-    let cancelled = false;
-    lotRepo.list(key).then(
-      (l) => !cancelled && setLibrary(l),
-      () => !cancelled && setLibrary([]),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [key]);
+  // Bottles of this compound: in stock first; used-up ones only if this run used them.
+  const library = useMemo(
+    () =>
+      inventory
+        ?.filter((l) => matchesCompound(l, c) && (available(l) || l.id === lot.lotId))
+        .sort((a, b) => Number(available(b)) - Number(available(a)) || b.updatedAt - a.updatedAt) ?? null,
+    [inventory, key, c.name, c.cas, c.smiles, lot.lotId], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   useEffect(() => {
     if (lot.source !== 'made' || reactions) return;
@@ -52,7 +51,14 @@ export function LotEditor({ c, onUpdate, onNotify, currentReactionId, onShowSpec
   const linked = library?.find((l) => l.id === lot.lotId);
 
   const use = (l: ReagentLot) => {
-    onUpdate(applyLot(c, l, l.id));
+    // Fill what the component lacks (e.g. added by name only) from the bottle's record.
+    const fromLot = componentFromLot(l);
+    const fill: Partial<Component> = {};
+    for (const k of ['cas', 'smiles', 'formula', 'mw', 'cid', 'density', 'phase'] as const) {
+      if (c[k] === undefined && fromLot[k] !== undefined) (fill as Record<string, unknown>)[k] = fromLot[k];
+    }
+    if (fill.density) fill.densitySource = 'manual';
+    onUpdate({ ...fill, ...applyLot({ ...c, ...fill }, l, l.id) });
     onNotify(L.used.replace('{lot}', lotLabel(l, L.made) || l.name));
   };
 
@@ -61,9 +67,9 @@ export function LotEditor({ c, onUpdate, onNotify, currentReactionId, onShowSpec
     setBusy(true);
     try {
       const base = lotFromComponent(c, lot.lotId ?? newId());
-      const saved = await lotRepo.save(linked ? { ...base, createdAt: linked.createdAt } : base);
+      // Updating keeps the inventory-only fields (location, remaining, status…).
+      const saved = await saveToInventory(linked ? { ...linked, ...base, status: linked.status, compound: { ...linked.compound, ...base.compound }, createdAt: linked.createdAt } : base);
       onUpdate({ lot: { ...lotInfo(saved), lotId: saved.id } });
-      setLibrary((ls) => [saved, ...(ls ?? []).filter((l) => l.id !== saved.id)]);
       onNotify(linked ? L.updatedLib : L.savedLib);
     } catch {
       onNotify(t.saveFailed);
@@ -103,7 +109,8 @@ export function LotEditor({ c, onUpdate, onNotify, currentReactionId, onShowSpec
               <div>
                 <strong>{lotLabel(l, L.made) || L.unnamed}</strong>
                 <small>
-                  {[l.spec, l.purity && `${l.purity}%`, l.molarity && `${l.molarity} M`, l.receivedAt].filter(Boolean).join(' · ')}
+                  {[l.spec, l.purity && `${l.purity}%`, l.molarity && `${l.molarity} M`, l.location && `📍 ${l.location}`, l.remaining, l.receivedAt].filter(Boolean).join(' · ')}
+                  {l.status && l.status !== 'in_stock' && <span className={'stock s-' + l.status}>{t.inv.statuses[l.status]}</span>}
                   {l.verification && l.verification !== 'unverified' && <span className={'lot-ver v-' + l.verification}>{L.verifications[l.verification]}</span>}
                   {!!l.attachments && <span className="lot-files">{L.files.replace('{n}', String(l.attachments))}</span>}
                 </small>
@@ -217,6 +224,7 @@ export function LotEditor({ c, onUpdate, onNotify, currentReactionId, onShowSpec
         {(lot.lotId || Object.keys(lotInfo(lot)).length > 0) && (
           <button className="ghost small" onClick={() => onUpdate({ lot: undefined })}>{L.clear}</button>
         )}
+        {onOpenInventory && <button className="link small" onClick={onOpenInventory}>{t.inv.manage}</button>}
       </div>
       {!lot.lotId && <p className="hint">{L.libHint}</p>}
     </section>

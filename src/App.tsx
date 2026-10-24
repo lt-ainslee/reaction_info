@@ -1,6 +1,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { loadRDKit } from './chem/rdkit';
+import { componentFromLot, type ReagentLot } from './chem/lots';
 import { activeRun, nextCode, runCode, runsOf } from './chem/runs';
 import { groupFragments, parseInputText } from './chem/parseInput';
 import { compoundKey, resolveParsed, type CompoundData, type Resolved } from './chem/resolve';
@@ -12,6 +13,7 @@ import { CompoundSearch } from './components/CompoundSearch';
 import { DetailPanel } from './components/DetailPanel';
 import Report from './components/Report';
 import { Attachments } from './components/Attachments';
+import { Inventory } from './components/Inventory';
 import { NumInput } from './components/NumInput';
 import { Procedure } from './components/Procedure';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
@@ -96,6 +98,9 @@ export default function App() {
   };
 
   const add = (data: CompoundData, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...data, role })));
+  /** A bottle from the inventory: structure, physical data, purity / concentration and the lot link. */
+  const addLot = (lot: ReagentLot, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...componentFromLot(lot), role })));
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const applyInput = (res: Resolved, mode: ApplyMode) =>
     setRxn((r) => {
       const explicitEquiv = new Set<string>();
@@ -224,6 +229,7 @@ export default function App() {
               }}
               onDeleted={doc.removed}
             />
+            <button className="ghost" onClick={() => setInventoryOpen(true)}>{t.inv.open}</button>
             <button
               className="ghost"
               onClick={() => {
@@ -322,7 +328,7 @@ export default function App() {
             </div>
             <div className="input-block">
               <h3>{t.addCompound}</h3>
-              <CompoundSearch rd={rd} onAdd={add} openEditor={openEditor} />
+              <CompoundSearch rd={rd} onAdd={add} onAddLot={addLot} openEditor={openEditor} />
             </div>
           </div>
         </section>
@@ -446,12 +452,17 @@ export default function App() {
           onClose={() => setSelected(null)}
           onNotify={notify}
           currentReactionId={savedId}
+          onOpenInventory={() => {
+            setSelected(null);
+            setInventoryOpen(true);
+          }}
           onShowSpectra={(lotId) => {
             setSelected(null);
             setFocusNode(`lot:${lotId}`);
           }}
         />
       )}
+      {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={addLot} onNotify={notify} />}
       {flash && <div className="toast">{flash}</div>}
       {reportOpen && (
         <Report rxn={rxn} units={units} rd={rd} reactionId={remote ? savedId : undefined} onChange={setRxn} onClose={() => setReportOpen(false)} />

@@ -2,7 +2,8 @@ import {
   compute, dispensedByVolume, needsDensity, setEquiv, setMass, setMmol, setReference, setRole, setVolume, updateComponent,
   type Component, type Computed, type Phase, type Reaction, type Role,
 } from '../chem/stoich';
-import { hasLotInfo, lotLabel } from '../chem/lots';
+import { available, hasLotInfo, lotLabel, matchesCompound } from '../chem/lots';
+import { useInventory } from '../storage/inventory';
 import { useI18n } from '../i18n';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from '../units';
 import { NumInput } from './NumInput';
@@ -34,6 +35,8 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
   const ms = MASS_UNITS[units.mass];
   const vl = VOLUME_UNITS[units.volume];
   const up = (id: string, p: Partial<Component>) => onChange(updateComponent(rxn, id, p));
+  const inventory = useInventory();
+  const stockOf = (c: Component) => inventory?.filter((l) => available(l) && matchesCompound(l, c)).length ?? 0;
 
   const unitSelect = <K extends keyof Units>(key: K, options: Record<string, number>) => (
     <select className="unit" value={units[key]} onChange={(e) => onUnits({ ...units, [key]: e.target.value as Units[K] })}>
@@ -85,6 +88,8 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
                     {c.lot!.verification && <span className={'lot-dot v-' + c.lot!.verification} />}
                     {lotLabel(c.lot!, t.lots.made) || t.lots.title}
                   </>
+                ) : stockOf(c) ? (
+                  <span className="lot-stock">{t.inv.pickStock.replace('{n}', String(stockOf(c)))}</span>
                 ) : (
                   t.lots.chip
                 )}
