@@ -1,9 +1,12 @@
 import type { MainModule } from '@rdkit/rdkit';
-import { exactLibraryMatch, isLibrarySolvent, LIBRARY, libraryToComponent, searchLibrary, type LibraryEntry } from './library';
+import { entryByAbbr, entryToData, searchAbbrs, type AbbrEntry } from './abbr';
+import { exactLibraryMatch, isLibrarySolvent, LIBRARY, libraryBySmiles, libraryToComponent, searchLibrary, type LibraryEntry } from './library';
 import { parseAgentText, type ParsedInput, type Species } from './parseInput';
 import { isCas, searchByInchi, searchByName, searchBySmiles, type PubChemHit } from './pubchem';
-import { isValidSmiles, smilesInfo } from './rdkit';
+import { canonicalSmiles, isValidSmiles, smilesInfo } from './rdkit';
 import type { Component, Role } from './stoich';
+
+export { libraryBySmiles };
 
 export type CompoundData = Omit<Component, 'id' | 'role' | 'equiv'>;
 
@@ -14,32 +17,6 @@ export function looksLikeSmiles(rd: MainModule | null, q: string): boolean {
   const s = q.trim();
   if (!rd || !s || /\s/.test(s) || isCas(s) || hasCjk(s)) return false;
   return isValidSmiles(rd, s);
-}
-
-function canonical(rd: MainModule, smiles: string): string | null {
-  const mol = rd.get_mol(smiles);
-  if (!mol) return null;
-  try {
-    return mol.get_smiles();
-  } finally {
-    mol.delete();
-  }
-}
-
-let libIndex: Map<string, LibraryEntry> | null = null;
-
-/** Find a library entry with the same structure (canonical SMILES). */
-export function libraryBySmiles(rd: MainModule, smiles: string): LibraryEntry | undefined {
-  if (!libIndex) {
-    libIndex = new Map();
-    for (const e of LIBRARY) {
-      const key = e.smiles && canonical(rd, e.smiles);
-      // First entry wins (e.g. plain reagent before a solution of it).
-      if (key && !libIndex.has(key)) libIndex.set(key, e);
-    }
-  }
-  const key = canonical(rd, smiles);
-  return key ? libIndex.get(key) : undefined;
 }
 
 /**
@@ -77,6 +54,8 @@ export function smilesToData(rd: MainModule, smiles: string, name?: string, lang
 }
 
 export interface SearchResults {
+  /** Abbreviation table entries matching the query. */
+  abbrs: AbbrEntry[];
   local: LibraryEntry[];
   pubchem: PubChemHit[];
   smiles?: string;
@@ -99,11 +78,14 @@ export async function searchAll(q: string, rd: MainModule | null): Promise<Searc
       error = true;
     }
   }
-  return { local, pubchem, smiles, error };
+  return { abbrs: searchAbbrs(q), local, pubchem, smiles, error };
 }
 
 /** Resolve a single token to the best compound data (used by reaction import). */
 export async function resolveOne(q: string, rd: MainModule | null, lang: 'zh' | 'en'): Promise<CompoundData | null> {
+  // User-defined abbreviations win over everything ("SM-1", "P" or "CO" may also read as SMILES).
+  const own = entryByAbbr(q);
+  if (own) return entryToData(own);
   const lib = exactLibraryMatch(q);
   if (lib) return libraryToComponent(lib, lang);
   if (rd && looksLikeSmiles(rd, q)) {
@@ -210,7 +192,7 @@ export async function resolveParsed(
 /** Key used to match pasted compounds with existing ones when updating a reaction. */
 export function compoundKey(rd: MainModule | null, c: { smiles?: string; name: string; cas?: string }): string {
   if (rd && c.smiles) {
-    const can = canonical(rd, c.smiles);
+    const can = canonicalSmiles(rd, c.smiles);
     if (can) return 'smi:' + can;
   }
   return c.cas ? 'cas:' + c.cas : 'name:' + c.name.trim().toLowerCase();

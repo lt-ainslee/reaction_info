@@ -8,6 +8,7 @@ import { isValidSmiles, smilesInfo, smilesToSvg } from '../chem/rdkit';
 import type { Component } from '../chem/stoich';
 import type { OpenEditor } from '../App';
 import { useI18n } from '../i18n';
+import { AbbrField } from './AbbrField';
 import { LotEditor } from './LotEditor';
 import { fmt } from '../units';
 
@@ -22,9 +23,10 @@ interface Props {
   currentReactionId?: string;
   onShowSpectra?: (lotId: string) => void;
   onOpenInventory?: () => void;
+  onOpenAbbrs?: () => void;
 }
 
-export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, currentReactionId, onShowSpectra, onOpenInventory }: Props) {
+export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, currentReactionId, onShowSpectra, onOpenInventory, onOpenAbbrs }: Props) {
   const { t, lang } = useI18n();
   const [details, setDetails] = useState<PubChemDetails | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,6 +113,7 @@ export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, cu
         <span>{t.rename}</span>
         <input value={c.name} onChange={(e) => onUpdate({ name: e.target.value })} />
       </label>
+      <AbbrField c={c} rd={rd} onUpdate={onUpdate} onNotify={onNotify} onOpenAbbrs={onOpenAbbrs} />
       {c.role !== 'product' && (
         <LotEditor c={c} onUpdate={onUpdate} onNotify={onNotify} currentReactionId={currentReactionId} onShowSpectra={onShowSpectra} onOpenInventory={onOpenInventory} />
       )}

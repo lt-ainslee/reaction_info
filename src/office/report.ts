@@ -1,6 +1,7 @@
 // Word report and Excel workbook of a reaction (lazy-loaded; browser only).
 import type { MainModule } from '@rdkit/rdkit';
-import { schemeSvg, svgToPng, unitsToPt } from '../chem/scheme';
+import { nameWithAbbr } from '../chem/abbr';
+import { schemeSvg, svgToPng, unitsToPt, type SchemeLabels } from '../chem/scheme';
 import { formatReference, doiUrl } from '../chem/refs';
 import type { ReagentLot } from '../chem/lots';
 import { activeRun, runCode, runsOf, runYield } from '../chem/runs';
@@ -18,6 +19,8 @@ export interface ReportInput {
   rd: MainModule | null;
   /** Library data of the lots used (identity check, spectra count). */
   lots?: Map<string, ReagentLot>;
+  /** Scheme text: abbreviations (components carry them, see withAbbrs) or names. */
+  labels?: SchemeLabels;
 }
 
 // ---- procedure (Tiptap JSON) → Word blocks ----
@@ -89,8 +92,8 @@ export function procedureBlocks(doc: PNode, observation: string): Block[] {
 // ---- reaction scheme as a PNG ----
 
 /** The black-and-white scheme; width / height in px at its printed (ACS) size. */
-export async function schemePng(rxn: Reaction, rd: MainModule | null): Promise<{ png: Uint8Array; width: number; height: number } | null> {
-  const out = schemeSvg(rd, rxn, { background: true });
+export async function schemePng(rxn: Reaction, rd: MainModule | null, labels?: SchemeLabels): Promise<{ png: Uint8Array; width: number; height: number } | null> {
+  const out = schemeSvg(rd, rxn, { background: true, labels });
   if (!out) return null;
   const blob = await svgToPng(out.svg, out.width, out.height);
   if (!blob) return null;
@@ -114,7 +117,7 @@ const equivText = (c: Component, e: number) => (c.role === 'catalyst' ? `${fmt(e
 
 // ---- Word ----
 
-export async function wordReport({ rxn, units, t, rd, lots }: ReportInput): Promise<Blob> {
+export async function wordReport({ rxn, units, t, rd, lots, labels }: ReportInput): Promise<Blob> {
   const run = activeRun(rxn);
   const code = runCode(rxn, run);
   const am = AMOUNT_UNITS[units.amount];
@@ -141,7 +144,7 @@ export async function wordReport({ rxn, units, t, rd, lots }: ReportInput): Prom
     ),
   );
 
-  const scheme = await schemePng(rxn, rd);
+  const scheme = await schemePng(rxn, rd, labels);
   if (scheme) {
     b.push(p(t.preview, { style: 'Heading1' }));
     const k = Math.min(0.75, 450 / scheme.width); // px → pt, fit the A4 text width
@@ -166,7 +169,7 @@ export async function wordReport({ rxn, units, t, rd, lots }: ReportInput): Prom
         const v = compute(rxn, c);
         const solvent = c.role === 'solvent';
         return [
-          [{ text: c.name + (c.id === rxn.refId ? ` (${t.col.ref})` : ''), b: c.id === rxn.refId }],
+          [{ text: nameWithAbbr(c) + (c.id === rxn.refId ? ` (${t.col.ref})` : ''), b: c.id === rxn.refId }],
           [{ text: t.roles[c.role] }],
           [{ text: fmt(c.mw, 6) }],
           [{ text: solvent ? '—' : equivText(c, c.equiv) }],
@@ -194,7 +197,7 @@ export async function wordReport({ rxn, units, t, rd, lots }: ReportInput): Prom
         ...products.map((c) => {
           const v = compute(rxn, c);
           return [
-            [{ text: c.name }],
+            [{ text: nameWithAbbr(c) }],
             [{ text: fmt(c.mw, 6) }],
             [{ text: fmt(c.equiv, 3) }],
             [{ text: fmt(v.mmol !== undefined ? v.mmol / am : undefined) }],
@@ -291,7 +294,7 @@ export function excelWorkbook({ rxn, units, t, lots }: Omit<ReportInput, 'rd'>):
       const v = compute(rxn, c);
       const product = c.role === 'product';
       return [
-        c.name + (c.id === rxn.refId ? ' *' : ''),
+        nameWithAbbr(c) + (c.id === rxn.refId ? ' *' : ''),
         t.roles[c.role],
         c.cas,
         num(c.mw, 6),

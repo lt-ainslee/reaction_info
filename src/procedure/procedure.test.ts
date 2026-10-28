@@ -15,6 +15,7 @@ describe('formulaSubscripts', () => {
     expect(sub('Pd(PPh3)4')).toBe('Pd(PPh_3)_4');
     expect(sub('C18')).toBe('C_1_8');
     expect(sub('N2')).toBe('N_2');
+    expect(sub('Boc2O')).toBe('Boc_2O');
   });
   it('leaves ordinary words alone', () => {
     for (const w of ['Step2', 'MS4', 'T3P', 'Q3', 'THF', 'B2pin2', 'Fig1']) expect(sub(w)).toBeNull();

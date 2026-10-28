@@ -34,6 +34,17 @@ export function isValidSmiles(rd: MainModule, smiles: string): boolean {
   return true;
 }
 
+/** Canonical SMILES (null when RDKit can't read it). */
+export function canonicalSmiles(rd: MainModule, smiles: string): string | null {
+  const mol = rd.get_mol(smiles);
+  if (!mol) return null;
+  try {
+    return mol.get_smiles();
+  } finally {
+    mol.delete();
+  }
+}
+
 export function smilesToSvg(rd: MainModule, smiles: string, width = 180, height = 130): string | null {
   const mol = rd.get_mol(smiles);
   if (!mol) return null;

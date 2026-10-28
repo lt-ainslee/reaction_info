@@ -234,6 +234,7 @@ footer { text-align: center; padding: 8px 0 28px; }
 .rx-agent:hover:not(:disabled) { background: none; border: 0; color: var(--accent); text-decoration: underline; }
 .rx-conditions { flex-basis: 100%; color: var(--muted); font-style: italic; }
 .card-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.abbr-chip { font-size: 11px; font-weight: 600; padding: 0 5px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
 /* Black-and-white scheme: the exported SVG, on white like a printed page. */
 .rx-cd { align-self: center; width: min(100%, var(--cd-w)); }
 .rx-cd svg { display: block; width: 100%; height: auto; filter: var(--mol-filter); }
@@ -760,6 +761,21 @@ label.check.small input { min-height: 0; accent-color: var(--accent); }
 /* Inventory -------------------------------------------------------------- */
 .s-in_stock { --st: var(--ok); } .s-low { --st: #d08700; } .s-empty { --st: var(--faint); } .s-disposed { --st: var(--warn); }
 .inv-modal { width: min(1240px, 100%); height: min(860px, 100%); position: relative; }
+.abbr-modal { width: min(900px, 100%); height: auto; max-height: min(860px, 100%); }
+.abbr-hint { margin: 8px 16px 0; }
+.abbr-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
+.abbr-add .grow { flex: 1; min-width: 180px; }
+.abbr-add select { max-width: 180px; }
+.abbr-eq { color: var(--muted); }
+.abbr-found { flex-basis: 100%; }
+.abbr-input { width: 110px; font-weight: 600; }
+.abbr-table td { vertical-align: middle; }
+.abbr-table td input { width: 100%; min-width: 80px; }
+.abbr-table td:nth-child(2) input { width: 110px; min-width: 0; }
+.abbr-thumb { width: 72px; }
+.abbr-thumb img { display: block; width: 72px; height: 48px; object-fit: contain; filter: var(--mol-filter); }
+.abbr-field .row { display: flex; gap: 6px; align-items: center; }
+.abbr-field .hint { margin: 2px 0 0; }
 .inv-head { border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .inv-head .grow, .inv-filters .grow { flex: 1; }
 .inv-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }

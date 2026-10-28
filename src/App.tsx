@@ -1,5 +1,5 @@
 import type { MainModule } from '@rdkit/rdkit';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { loadRDKit } from './chem/rdkit';
 import { componentFromLot, type ReagentLot } from './chem/lots';
 import { activeRun, nextCode, runCode, runsOf } from './chem/runs';
@@ -18,6 +18,10 @@ import { NumInput } from './components/NumInput';
 import { Procedure } from './components/Procedure';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview, type SchemeLook } from './components/ReactionPreview';
+import { AbbrTable } from './components/AbbrTable';
+import { withAbbrs } from './chem/abbr';
+import type { SchemeLabels } from './chem/scheme';
+import { useAbbrs } from './storage/abbrs';
 import { References } from './components/References';
 import { RunBar } from './components/RunBar';
 import { SavedMenu } from './components/SavedMenu';
@@ -44,11 +48,20 @@ function loadUnits(): Units {
   }
 }
 
-function loadLook(): SchemeLook {
+/** A remembered choice of this browser (first option when unset). */
+function loadPref<T extends string>(key: string, options: readonly T[]): T {
   try {
-    return localStorage.getItem('schemeLook') === 'mono' ? 'mono' : 'color';
+    const v = localStorage.getItem(key);
+    return options.includes(v as T) ? (v as T) : options[0];
   } catch {
-    return 'color';
+    return options[0];
+  }
+}
+function savePref(key: string, v: string) {
+  try {
+    localStorage.setItem(key, v);
+  } catch {
+    /* not remembered */
   }
 }
 
@@ -66,7 +79,13 @@ export default function App() {
   const [planYield, setPlanYield] = useState<number | undefined>(80);
   const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-  const [look, setLook] = useState<SchemeLook>(loadLook);
+  const [look, setLook] = useState<SchemeLook>(() => loadPref('schemeLook', ['color', 'mono'] as const));
+  const [labels, setLabels] = useState<SchemeLabels>(() => loadPref('schemeLabels', ['abbr', 'name'] as const));
+  const [abbrsOpen, setAbbrsOpen] = useState(false);
+  const abbrTable = useAbbrs();
+  // The reaction with every compound's effective abbreviation, for drawing.
+  const shown = useMemo(() => withAbbrs(rd, rxn), [rd, rxn, abbrTable]);
+  const abbrMap = useMemo(() => new Map(shown.components.filter((c) => c.abbr).map((c) => [c.id, c.abbr!])), [shown]);
   /** Graph node to reveal in the attachments card (e.g. a lot from the side panel). */
   const [focusNode, setFocusNode] = useState<string | null>(null);
   const pending = useAutoLookup(rxn, setRxn, rd);
@@ -179,7 +198,7 @@ export default function App() {
       const [m, lib] = await Promise.all([import('./office/report'), lotRepo.list().catch(() => [])]);
       const used = new Set(runsOf(rxn).flatMap((r) => r.data.components.map((c) => c.lot?.lotId).filter(Boolean)));
       const lots = new Map(lib.filter((l) => used.has(l.id)).map((l) => [l.id, l]));
-      const input = { rxn, units, t, rd, lots };
+      const input = { rxn: shown, units, t, rd, lots, labels };
       if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
       else saveBlob(m.excelWorkbook(input), `${fileBase}.xlsx`);
     } catch (e) {
@@ -194,14 +213,14 @@ export default function App() {
   const exportScheme = async (f: 'svg' | 'png' | 'cdxml' | 'rxn') => {
     const m = await import('./chem/scheme');
     if (f === 'svg' || f === 'png') {
-      const out = m.schemeSvg(rd, rxn, { background: f === 'png' });
+      const out = m.schemeSvg(rd, shown, { background: f === 'png', labels });
       if (!out) return;
       if (f === 'svg') return saveBlob(new Blob([out.svg], { type: 'image/svg+xml' }), `${fileBase}.svg`);
       const png = await m.svgToPng(out.svg, out.width, out.height).catch(() => null);
       return png ? saveBlob(png, `${fileBase}.png`) : notify(t.saveFailed);
     }
     if (!rd) return notify(t.rdkitLoading);
-    const text = f === 'cdxml' ? m.schemeCdxml(rd, rxn) : m.schemeRxnfile(rd, rxn);
+    const text = f === 'cdxml' ? m.schemeCdxml(rd, shown, labels) : m.schemeRxnfile(rd, rxn);
     if (!text) return notify(t.scheme.noStructures);
     saveBlob(new Blob([text], { type: f === 'cdxml' ? 'chemical/x-cdxml' : 'chemical/x-mdl-rxnfile' }), `${fileBase}.${f}`);
   };
@@ -255,6 +274,7 @@ export default function App() {
               onDeleted={doc.removed}
             />
             <button className="ghost" onClick={() => setInventoryOpen(true)}>{t.inv.open}</button>
+            <button className="ghost" onClick={() => setAbbrsOpen(true)}>{t.abbr.title}</button>
             <button
               className="ghost"
               onClick={() => {
@@ -335,14 +355,25 @@ export default function App() {
                     title={t.scheme.lookTips[v]}
                     onClick={() => {
                       setLook(v);
-                      try {
-                        localStorage.setItem('schemeLook', v);
-                      } catch {
-                        /* not remembered */
-                      }
+                      savePref('schemeLook', v);
                     }}
                   >
                     {t.scheme.looks[v]}
+                  </button>
+                ))}
+              </div>
+              <div className="seg" role="group" title={t.scheme.labelsTip}>
+                {(['abbr', 'name'] as const).map((v) => (
+                  <button
+                    key={v}
+                    className={labels === v ? 'on' : ''}
+                    aria-pressed={labels === v}
+                    onClick={() => {
+                      setLabels(v);
+                      savePref('schemeLabels', v);
+                    }}
+                  >
+                    {t.scheme.labels[v]}
                   </button>
                 ))}
               </div>
@@ -356,7 +387,7 @@ export default function App() {
               </div>
             </div>
           </div>
-          <ReactionPreview rxn={rxn} rd={rd} rdError={rdError} look={look} onSelect={setSelected} />
+          <ReactionPreview rxn={shown} rd={rd} rdError={rdError} look={look} labels={labels} onSelect={setSelected} />
           {rxn.components.some((c) => c.smiles) && (
             <details className="smiles-details">
               <summary>SMILES</summary>
@@ -418,6 +449,7 @@ export default function App() {
             </div>
             <StoichTable
               rxn={rxn}
+              abbrs={abbrMap}
               units={units}
               onUnits={setUnits}
               pending={pending}
@@ -507,6 +539,10 @@ export default function App() {
           onClose={() => setSelected(null)}
           onNotify={notify}
           currentReactionId={savedId}
+          onOpenAbbrs={() => {
+            setSelected(null);
+            setAbbrsOpen(true);
+          }}
           onOpenInventory={() => {
             setSelected(null);
             setInventoryOpen(true);
@@ -517,10 +553,11 @@ export default function App() {
           }}
         />
       )}
+      {abbrsOpen && <AbbrTable rd={rd} rxn={rxn} onClose={() => setAbbrsOpen(false)} onNotify={notify} />}
       {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={addLot} onNotify={notify} />}
       {flash && <div className="toast">{flash}</div>}
       {reportOpen && (
-        <Report rxn={rxn} units={units} rd={rd} reactionId={remote ? savedId : undefined} onChange={setRxn} onClose={() => setReportOpen(false)} />
+        <Report rxn={rxn} units={units} rd={rd} labels={labels} reactionId={remote ? savedId : undefined} onChange={setRxn} onClose={() => setReportOpen(false)} />
       )}
       {editor && (
         <Suspense fallback={<div className="modal-backdrop"><p className="toast">{t.editorLoading}</p></div>}>

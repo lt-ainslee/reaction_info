@@ -1,5 +1,7 @@
+import type { MainModule } from '@rdkit/rdkit';
 import type { Component, Form, Phase } from './stoich';
 import { formulaMass } from './formula';
+import { canonicalSmiles } from './rdkit';
 
 // Built-in list of common reagents/solvents with the data that matters for
 // weighing out (density, commercial form). Searched before PubChem, and the
@@ -142,4 +144,20 @@ export function libraryToComponent(e: LibraryEntry, lang: 'zh' | 'en'): Omit<Com
     wtPercent: e.wtPercent,
     solutionDensity: e.solutionDensity,
   };
+}
+
+let libIndex: Map<string, LibraryEntry> | null = null;
+
+/** Find a library entry with the same structure (canonical SMILES). */
+export function libraryBySmiles(rd: MainModule, smiles: string): LibraryEntry | undefined {
+  if (!libIndex) {
+    libIndex = new Map();
+    for (const e of LIBRARY) {
+      const key = e.smiles && canonicalSmiles(rd, e.smiles);
+      // First entry wins (e.g. plain reagent before a solution of it).
+      if (key && !libIndex.has(key)) libIndex.set(key, e);
+    }
+  }
+  const key = canonicalSmiles(rd, smiles);
+  return key ? libIndex.get(key) : undefined;
 }

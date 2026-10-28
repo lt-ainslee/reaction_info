@@ -33,6 +33,7 @@ function normalizeComponent(raw: unknown): Component | null {
   if (lot) c.lot = lot;
   else delete c.lot;
   if (c.actualNote !== undefined && typeof c.actualNote !== 'string') delete c.actualNote;
+  if (c.abbr !== undefined && typeof c.abbr !== 'string') delete c.abbr;
   return c;
 }
 

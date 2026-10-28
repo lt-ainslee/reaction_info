@@ -20,6 +20,11 @@ export type Phase = 'solid' | 'liquid' | 'gas';
 export interface Component {
   id: string;
   name: string;
+  /**
+   * Abbreviation used in the scheme (THF, Boc2O, 1a). Undefined = from the
+   * abbreviation table / library; '' = none for this compound.
+   */
+  abbr?: string;
   role: Role;
   smiles?: string;
   formula?: string;

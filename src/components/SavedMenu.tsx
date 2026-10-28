@@ -26,10 +26,10 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
 
   const doExport = async () => {
     try {
-      const { blob, reactions, lots } = await exportAll((a, b) => setBackupMsg(t.backup.exporting.replace('{a}', String(a)).replace('{b}', String(b))));
+      const { blob, reactions, lots, abbrs } = await exportAll((a, b) => setBackupMsg(t.backup.exporting.replace('{a}', String(a)).replace('{b}', String(b))));
       saveBlob(blob, `reaction-info-backup-${new Date().toISOString().slice(0, 10)}.json`);
       setBackupMsg(null);
-      onNotify(t.backup.exported.replace('{n}', String(reactions)).replace('{m}', String(lots)));
+      onNotify(t.backup.exported.replace('{n}', String(reactions)).replace('{m}', String(lots)).replace('{k}', String(abbrs)));
     } catch {
       setBackupMsg(t.loadFailed);
     }
@@ -138,7 +138,7 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
                   const res = await restore(await f.text());
                   if (!res) return setBackupMsg(t.backup.invalid);
                   setBackupMsg(null);
-                  onNotify(t.backup.restored.replace('{n}', String(res.reactions)).replace('{m}', String(res.lots)));
+                  onNotify(t.backup.restored.replace('{n}', String(res.reactions)).replace('{m}', String(res.lots)).replace('{k}', String(res.abbrs)));
                   refresh();
                 } catch {
                   setBackupMsg(t.loadFailed);

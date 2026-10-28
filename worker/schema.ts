@@ -100,6 +100,21 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       `CREATE INDEX IF NOT EXISTS idx_lots_key ON reagent_lots (compound_key, deleted_at)`,
     ],
   },
+  {
+    version: 6,
+    sql: [
+      // Abbreviation table (THF, Boc2O, SM-1…), shared by the group.
+      `CREATE TABLE IF NOT EXISTS abbreviations (
+        id TEXT PRIMARY KEY,
+        abbr TEXT NOT NULL,
+        data TEXT NOT NULL,
+        created_by TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted_at INTEGER
+      )`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

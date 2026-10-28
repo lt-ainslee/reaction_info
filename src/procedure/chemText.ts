@@ -7,6 +7,8 @@ const ELEMENTS = new Set(
     // common group abbreviations
     'Ph Me Et Bu Bn Bz Ts Ms Tf Cy R X L').split(' '),
 );
+/** Longer protecting-group symbols (Boc2O, Cbz2O, Piv2O). */
+const GROUPS = ['Fmoc', 'Boc', 'Cbz', 'Piv'];
 
 /**
  * Indices of the characters in `token` that should be subscripts, or null
@@ -19,7 +21,11 @@ export function formulaSubscripts(token: string): number[] | null {
   let prev: 'sym' | 'close' | 'open' | 'digit' | null = null;
   for (let i = 0; i < token.length; ) {
     const ch = token[i];
-    if (/[A-Z]/.test(ch)) {
+    const group = GROUPS.find((g) => token.startsWith(g, i));
+    if (group) {
+      i += group.length;
+      prev = 'sym';
+    } else if (/[A-Z]/.test(ch)) {
       const two = token.slice(i, i + 2);
       if (/^[A-Z][a-z]$/.test(two) && ELEMENTS.has(two)) i += 2;
       else if (ELEMENTS.has(ch)) i += 1;

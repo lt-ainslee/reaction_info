@@ -10,7 +10,8 @@ import { compoundOf, displayName, indexGraph, nodeTypeOf, treeRows, type Row } f
 import { GHS } from '../chem/ghs';
 import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
-import { schemeSvg, unitsToPt } from '../chem/scheme';
+import { withAbbrs } from '../chem/abbr';
+import { schemeSvg, unitsToPt, type SchemeLabels } from '../chem/scheme';
 import { findCid } from '../chem/resolve';
 import type { ReagentLot } from '../chem/lots';
 import { doiUrl, formatReference } from '../chem/refs';
@@ -24,6 +25,8 @@ interface Props {
   rxn: Reaction;
   units: Units;
   rd: MainModule | null;
+  /** Scheme text: abbreviations or full names. */
+  labels?: SchemeLabels;
   /** Saved reaction on the server, to list its attachments. */
   reactionId?: string;
   onChange: (r: Reaction) => void;
@@ -32,8 +35,10 @@ interface Props {
 
 type SafetyMap = Record<string, PubChemSafety | null>;
 
-export default function Report({ rxn, units, rd, reactionId, onChange, onClose }: Props) {
+export default function Report({ rxn, units, rd, labels, reactionId, onChange, onClose }: Props) {
   const { t, lang } = useI18n();
+  const shown = useMemo(() => withAbbrs(rd, rxn), [rd, rxn]);
+  const abbr = (c: Component) => shown.components.find((x) => x.id === c.id)?.abbr;
   const [withSafety, setWithSafety] = useState(true);
   const [withScheme, setWithScheme] = useState(true);
   const [safety, setSafety] = useState<SafetyMap>({});
@@ -199,7 +204,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
           {withScheme && (
             <section>
               <h2>{t.preview}</h2>
-              <Scheme rxn={rxn} rd={rd} />
+              <Scheme rxn={shown} rd={rd} labels={labels} />
               {rxn.conditions && (
                 <p className="rp-cond">
                   <span>{t.conditions}</span>
@@ -244,7 +249,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
                           {c.name}
                           {isRef && <span className="rp-badge">{t.col.ref}</span>}
                         </div>
-                        <Sub c={c} />
+                        <Sub c={c} abbr={abbr(c)} />
                       </td>
                       <td className="nowrap">{t.roles[c.role]}</td>
                       <td className="r">{fmt(c.mw, 6)}</td>
@@ -322,7 +327,7 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
                       <tr key={c.id}>
                         <td>
                           <div className="rp-name">{c.name}</div>
-                          <Sub c={c} />
+                          <Sub c={c} abbr={abbr(c)} />
                         </td>
                         <td className="r">{fmt(c.mw, 6)}</td>
                         <td className="r">{fmt(c.equiv, 3)}</td>
@@ -468,9 +473,10 @@ export default function Report({ rxn, units, rd, reactionId, onChange, onClose }
 }
 
 /** Formula and CAS; each kept on one line. */
-function Sub({ c }: { c: Component }) {
+function Sub({ c, abbr }: { c: Component; abbr?: string }) {
   return (
     <div className="rp-sub">
+      {abbr && abbr !== c.name && <span>{abbr}</span>}
       {c.formula && <span>{c.formula}</span>}
       {c.cas && <span>CAS {c.cas}</span>}
     </div>
@@ -478,8 +484,8 @@ function Sub({ c }: { c: Component }) {
 }
 
 /** Black-and-white scheme at its printed (ACS) size; conditions are listed below it. */
-function Scheme({ rxn, rd }: { rxn: Reaction; rd: MainModule | null }) {
-  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }), [rd, rxn]);
+function Scheme({ rxn, rd, labels }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels }) {
+  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }, { labels }), [rd, rxn, labels]);
   if (!out) return null;
   return (
     <div className="rp-scheme">
