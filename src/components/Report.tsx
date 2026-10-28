@@ -12,8 +12,7 @@ import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { withAbbrs } from '../chem/abbr';
 import { smilesToSvg } from '../chem/rdkit';
-import { schemeSvg, unitsToPt, type SchemeLabels } from '../chem/scheme';
-import type { SchemeLook } from './ReactionPreview';
+import { REPORT_LOOKS, schemeSvg, unitsToPt, type ReportLook, type SchemeLabels } from '../chem/scheme';
 import { findCid } from '../chem/resolve';
 import type { ReagentLot } from '../chem/lots';
 import { doiUrl, formatReference } from '../chem/refs';
@@ -30,8 +29,8 @@ interface Props {
   /** Scheme text: abbreviations or full names. */
   labels?: SchemeLabels;
   /** Scheme style (shared with the Word export). */
-  look: SchemeLook;
-  onLook: (v: SchemeLook) => void;
+  look: ReportLook;
+  onLook: (v: ReportLook) => void;
   /** Export the same report as Word. */
   onWord?: () => void;
   wordBusy?: boolean;
@@ -179,9 +178,9 @@ export default function Report({ rxn, units, rd, labels, look, onLook, onWord, w
         {withScheme && (
           <div className="seg" role="group" aria-label={t.report.schemeStyle} title={t.report.schemeStyleTip}>
             <span className="seg-label">{t.report.schemeStyle}</span>
-            {(['mono', 'color'] as const).map((v) => (
-              <button key={v} className={look === v ? 'on' : ''} aria-pressed={look === v} onClick={() => onLook(v)}>
-                {t.scheme.looks[v]}
+            {REPORT_LOOKS.map((v) => (
+              <button key={v} className={look === v ? 'on' : ''} aria-pressed={look === v} title={t.report.lookTips[v]} onClick={() => onLook(v)}>
+                {t.report.looks[v]}
               </button>
             ))}
           </div>
@@ -225,7 +224,11 @@ export default function Report({ rxn, units, rd, labels, look, onLook, onWord, w
           {withScheme && (
             <section>
               <h2>{t.preview}</h2>
-              {look === 'color' ? <ColorScheme rxn={shown} rd={rd} labels={labels} /> : <Scheme rxn={shown} rd={rd} labels={labels} />}
+              {look === 'color' ? (
+                <ColorScheme rxn={shown} rd={rd} labels={labels} />
+              ) : (
+                <Scheme rxn={shown} rd={rd} labels={labels} color={look === 'cdcolor'} />
+              )}
               {rxn.conditions && (
                 <p className="rp-cond">
                   <span>{t.conditions}</span>
@@ -505,8 +508,8 @@ function Sub({ c, abbr }: { c: Component; abbr?: string }) {
 }
 
 /** Black-and-white scheme at its printed (ACS) size; conditions are listed below it. */
-function Scheme({ rxn, rd, labels }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels }) {
-  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }, { labels }), [rd, rxn, labels]);
+function Scheme({ rxn, rd, labels, color }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels; color: boolean }) {
+  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }, { labels, color }), [rd, rxn, labels, color]);
   if (!out) return null;
   return (
     <div className="rp-scheme">

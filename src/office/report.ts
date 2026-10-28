@@ -2,7 +2,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { nameWithAbbr } from '../chem/abbr';
 import { smilesToSvg } from '../chem/rdkit';
-import { schemeSvg, svgToPng, unitsToPt, type SchemeLabels } from '../chem/scheme';
+import { schemeSvg, svgToPng, unitsToPt, type ReportLook, type SchemeLabels } from '../chem/scheme';
 import { formatReference, doiUrl } from '../chem/refs';
 import type { ReagentLot } from '../chem/lots';
 import { activeRun, runCode, runsOf, runYield } from '../chem/runs';
@@ -22,8 +22,8 @@ export interface ReportInput {
   lots?: Map<string, ReagentLot>;
   /** Scheme text: abbreviations (components carry them, see withAbbrs) or names. */
   labels?: SchemeLabels;
-  /** Scheme structures with atom colours (default black and white, ChemDraw style). */
-  schemeColor?: boolean;
+  /** Scheme style (default black and white, ChemDraw style). */
+  look?: ReportLook;
 }
 
 // ---- procedure (Tiptap JSON) → Word blocks ----
@@ -174,10 +174,10 @@ async function colorSchemePng(rxn: Reaction, rd: MainModule | null, labels?: Sch
   return { png: new Uint8Array(await blob.arrayBuffer()), width, height };
 }
 
-/** The scheme as a picture: ChemDraw style (black and white, ACS size) or the original coloured layout. */
-export async function schemePng(rxn: Reaction, rd: MainModule | null, labels?: SchemeLabels, color = false): Promise<{ png: Uint8Array; width: number; height: number } | null> {
-  if (color) return colorSchemePng(rxn, rd, labels);
-  const out = schemeSvg(rd, rxn, { background: true, labels });
+/** The scheme as a picture: ChemDraw style (ACS size, black and white or coloured) or the original coloured layout. */
+export async function schemePng(rxn: Reaction, rd: MainModule | null, labels?: SchemeLabels, look: ReportLook = 'mono'): Promise<{ png: Uint8Array; width: number; height: number } | null> {
+  if (look === 'color') return colorSchemePng(rxn, rd, labels);
+  const out = schemeSvg(rd, rxn, { background: true, labels, color: look === 'cdcolor' });
   if (!out) return null;
   const blob = await svgToPng(out.svg, out.width, out.height);
   if (!blob) return null;
@@ -201,7 +201,7 @@ const equivText = (c: Component, e: number) => (c.role === 'catalyst' ? `${fmt(e
 
 // ---- Word ----
 
-export async function wordReport({ rxn, units, t, rd, lots, labels, schemeColor }: ReportInput): Promise<Blob> {
+export async function wordReport({ rxn, units, t, rd, lots, labels, look }: ReportInput): Promise<Blob> {
   const run = activeRun(rxn);
   const code = runCode(rxn, run);
   const am = AMOUNT_UNITS[units.amount];
@@ -228,7 +228,7 @@ export async function wordReport({ rxn, units, t, rd, lots, labels, schemeColor 
     ),
   );
 
-  const scheme = await schemePng(rxn, rd, labels, schemeColor);
+  const scheme = await schemePng(rxn, rd, labels, look);
   if (scheme) {
     b.push(p(t.preview, { style: 'Heading1' }));
     const k = Math.min(0.75, 450 / scheme.width); // px → pt, fit the A4 text width
