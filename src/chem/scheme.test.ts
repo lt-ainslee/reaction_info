@@ -50,12 +50,6 @@ describe('scheme export', () => {
     expect(doc.querySelector('parsererror')).toBeNull();
   });
 
-  it('keeps atom colours when asked', () => {
-    const colours = new Set(schemeSvg(rd, rxn(), { color: true })!.svg.match(/#[0-9A-Fa-f]{6}\b/g));
-    expect(colours.size).toBeGreaterThan(1);
-    expect(colours.has('#FF0000')).toBe(true); // oxygen
-  });
-
   it('writes CDXML that reads back as the same reaction', () => {
     const xml = schemeCdxml(rd, rxn())!;
     const back = parseCdxml(xml)!;

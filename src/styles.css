@@ -433,6 +433,18 @@ input.num.dispense, .stoich tr input.num.dispense { font-weight: 700; color: var
 
 .rp-scheme { display: flex; justify-content: center; }
 .rp-scheme img { max-width: 100%; height: auto; }
+/* Coloured scheme (the original report layout) */
+.rpc-scheme { display: flex; align-items: center; justify-content: center; gap: 4mm; flex-wrap: nowrap; }
+.rpc-side { display: flex; align-items: center; gap: 1.5mm; flex-wrap: wrap; justify-content: center; }
+.rpc-mol { margin: 0; display: flex; flex-direction: column; align-items: center; }
+.rpc-mol img { width: 34mm; height: auto; }
+.rpc-mol-text { width: 30mm; height: 22mm; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--p-line); border-radius: 2mm; font-weight: 600; }
+.rpc-mol figcaption { font-size: 8pt; color: var(--p-muted); text-align: center; max-width: 36mm; }
+.rpc-plus { color: var(--p-faint); font-size: 13pt; }
+.rpc-arrow { flex: 0 0 34mm; display: flex; flex-direction: column; gap: 1.2mm; }
+.rpc-line { height: 1.2px; background: var(--p-text); position: relative; margin-right: 1mm; }
+.rpc-line::after { content: ''; position: absolute; right: -1mm; top: 50%; transform: translateY(-50%); border-left: 2.6mm solid var(--p-text); border-top: 1.1mm solid transparent; border-bottom: 1.1mm solid transparent; }
+.rpc-agents { font-size: 8pt; text-align: center; min-height: 3.5mm; color: var(--p-text); }
 .rp-cond { margin: 3mm 0 0; font-size: 9.5pt; }
 .rp-cond span { color: var(--p-muted); margin-right: 3mm; font-size: 8.5pt; }
 

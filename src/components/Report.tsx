@@ -2,7 +2,7 @@
 // as PDF" uses the browser's print dialog, which keeps text as vector text and
 // renders Chinese with the system fonts (no font embedding needed).
 import type { MainModule } from '@rdkit/rdkit';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { formatSize, getGraph } from '../attachments/api';
 import { isEmptyDoc, procedureOf, toHtml } from '../procedure/doc';
@@ -11,6 +11,7 @@ import { GHS } from '../chem/ghs';
 import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { withAbbrs } from '../chem/abbr';
+import { smilesToSvg } from '../chem/rdkit';
 import { schemeSvg, unitsToPt, type SchemeLabels } from '../chem/scheme';
 import type { SchemeLook } from './ReactionPreview';
 import { findCid } from '../chem/resolve';
@@ -224,7 +225,7 @@ export default function Report({ rxn, units, rd, labels, look, onLook, onWord, w
           {withScheme && (
             <section>
               <h2>{t.preview}</h2>
-              <Scheme rxn={shown} rd={rd} labels={labels} color={look === 'color'} />
+              {look === 'color' ? <ColorScheme rxn={shown} rd={rd} labels={labels} /> : <Scheme rxn={shown} rd={rd} labels={labels} />}
               {rxn.conditions && (
                 <p className="rp-cond">
                   <span>{t.conditions}</span>
@@ -504,12 +505,53 @@ function Sub({ c, abbr }: { c: Component; abbr?: string }) {
 }
 
 /** Black-and-white scheme at its printed (ACS) size; conditions are listed below it. */
-function Scheme({ rxn, rd, labels, color }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels; color: boolean }) {
-  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }, { labels, color }), [rd, rxn, labels, color]);
+function Scheme({ rxn, rd, labels }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels }) {
+  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }, { labels }), [rd, rxn, labels]);
   if (!out) return null;
   return (
     <div className="rp-scheme">
       <img alt="" style={{ width: `${unitsToPt(out.width)}pt` }} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(out.svg)} />
     </div>
+  );
+}
+
+/** The original coloured layout: one RDKit drawing per compound, text over / under a CSS arrow. */
+function ColorScheme({ rxn, rd, labels }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels }) {
+  const text = (c: Component) => (labels !== 'name' && c.abbr) || c.name;
+  const side = (list: Component[]) =>
+    list.map((c, i) => (
+      <Fragment key={c.id}>
+        {i > 0 && <span className="rpc-plus">+</span>}
+        <ColorMol c={c} rd={rd} text={text(c)} />
+      </Fragment>
+    ));
+  const above = rxn.components.filter((c) => c.role === 'reagent' || c.role === 'catalyst');
+  const below = rxn.components.filter((c) => c.role === 'solvent');
+  return (
+    <div className="rpc-scheme">
+      <div className="rpc-side">{side(rxn.components.filter((c) => c.role === 'reactant'))}</div>
+      <div className="rpc-arrow">
+        <div className="rpc-agents">
+          {above.map((c) => (c.role === 'catalyst' ? `${text(c)} (${fmt(c.equiv * 100, 3)} mol%)` : text(c))).join(', ')}
+        </div>
+        <div className="rpc-line" />
+        <div className="rpc-agents">{below.map(text).join(', ')}</div>
+      </div>
+      <div className="rpc-side">{side(rxn.components.filter((c) => c.role === 'product'))}</div>
+    </div>
+  );
+}
+
+function ColorMol({ c, rd, text }: { c: Component; rd: MainModule | null; text: string }) {
+  const svg = useMemo(() => (rd && c.smiles ? smilesToSvg(rd, c.smiles, 200, 145) : null), [rd, c.smiles]);
+  return (
+    <figure className="rpc-mol">
+      {svg ? (
+        <img alt={c.name} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} />
+      ) : (
+        <span className="rpc-mol-text">{c.formula ?? c.name}</span>
+      )}
+      <figcaption>{text}</figcaption>
+    </figure>
   );
 }
