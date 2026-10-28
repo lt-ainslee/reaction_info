@@ -1,6 +1,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { Fragment, useMemo } from 'react';
 import { smilesToSvg } from '../chem/rdkit';
+import { schemeSvg, unitsToPt } from '../chem/scheme';
 import type { Component, Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
 
@@ -8,14 +9,19 @@ interface Props {
   rxn: Reaction;
   rd: MainModule | null;
   rdError: boolean;
+  /** 'color': RDKit colours, interactive layout; 'mono': black-and-white scheme as exported. */
+  look: SchemeLook;
   onSelect: (id: string) => void;
 }
+
+export type SchemeLook = 'color' | 'mono';
 
 // Layout: [reactants] → [products], each side wraps on its own so wide
 // molecules never push the arrow off screen; on narrow screens the three
 // blocks stack and the arrow points down.
-export function ReactionPreview({ rxn, rd, rdError, onSelect }: Props) {
+export function ReactionPreview({ rxn, rd, rdError, look, onSelect }: Props) {
   const { t } = useI18n();
+  if (look === 'mono' && (rxn.components.length || rxn.conditions)) return <MonoScheme rxn={rxn} rd={rd} rdError={rdError} onSelect={onSelect} />;
   const by = (roles: Component['role'][]) => rxn.components.filter((c) => roles.includes(c.role));
   const left = by(['reactant']);
   const above = by(['reagent', 'catalyst']);
@@ -75,5 +81,30 @@ function Mol({ c, rd, onClick }: { c: Component; rd: MainModule | null; onClick:
       )}
       <span className="rx-mol-name">{c.name}</span>
     </button>
+  );
+}
+
+/** The exported SVG itself (what you see is what you download); click a compound to select it. */
+function MonoScheme({ rxn, rd, rdError, onSelect }: Omit<Props, 'look'>) {
+  const { t } = useI18n();
+  // Redraw only when something drawn changes, not on every amount edit.
+  const key = JSON.stringify([rxn.conditions, rxn.components.map((c) => [c.id, c.role, c.name, c.smiles, c.formula, c.role === 'catalyst' && c.equiv])]);
+  const out = useMemo(() => schemeSvg(rd, rxn, { interactive: true }), [rd, key]);
+  return (
+    <div className="rx-wrap">
+      {!rd && !rdError && <p className="muted small">{t.rdkitLoading}</p>}
+      {out && (
+        <div
+          className="rx-cd"
+          // Shown at 1.6× the printed (ACS) size, shrunk to fit narrow screens.
+          style={{ ['--cd-w' as string]: `${((unitsToPt(out.width) * 4) / 3) * 1.6}px` }}
+          onClick={(e) => {
+            const id = (e.target as Element).closest('[data-cid]')?.getAttribute('data-cid');
+            if (id) onSelect(id);
+          }}
+          dangerouslySetInnerHTML={{ __html: out.svg }}
+        />
+      )}
+    </div>
   );
 }

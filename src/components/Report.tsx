@@ -2,7 +2,7 @@
 // as PDF" uses the browser's print dialog, which keeps text as vector text and
 // renders Chinese with the system fonts (no font embedding needed).
 import type { MainModule } from '@rdkit/rdkit';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { formatSize, getGraph } from '../attachments/api';
 import { isEmptyDoc, procedureOf, toHtml } from '../procedure/doc';
@@ -10,7 +10,7 @@ import { compoundOf, displayName, indexGraph, nodeTypeOf, treeRows, type Row } f
 import { GHS } from '../chem/ghs';
 import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
-import { smilesToSvg } from '../chem/rdkit';
+import { schemeSvg, unitsToPt } from '../chem/scheme';
 import { findCid } from '../chem/resolve';
 import type { ReagentLot } from '../chem/lots';
 import { doiUrl, formatReference } from '../chem/refs';
@@ -477,42 +477,13 @@ function Sub({ c }: { c: Component }) {
   );
 }
 
-/** Static scheme for print: no wrapping tricks, fixed image size. */
+/** Black-and-white scheme at its printed (ACS) size; conditions are listed below it. */
 function Scheme({ rxn, rd }: { rxn: Reaction; rd: MainModule | null }) {
-  const side = (list: Component[]) =>
-    list.map((c, i) => (
-      <Fragment key={c.id}>
-        {i > 0 && <span className="rp-plus">+</span>}
-        <Mol c={c} rd={rd} />
-      </Fragment>
-    ));
-  const above = rxn.components.filter((c) => c.role === 'reagent' || c.role === 'catalyst');
-  const below = rxn.components.filter((c) => c.role === 'solvent');
+  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }), [rd, rxn]);
+  if (!out) return null;
   return (
     <div className="rp-scheme">
-      <div className="rp-side">{side(rxn.components.filter((c) => c.role === 'reactant'))}</div>
-      <div className="rp-arrow">
-        <div className="rp-agents">
-          {above.map((c) => (c.role === 'catalyst' ? `${c.name} (${fmt(c.equiv * 100, 3)} mol%)` : c.name)).join(', ')}
-        </div>
-        <div className="rp-line" />
-        <div className="rp-agents">{below.map((c) => c.name).join(', ')}</div>
-      </div>
-      <div className="rp-side">{side(rxn.components.filter((c) => c.role === 'product'))}</div>
+      <img alt="" style={{ width: `${unitsToPt(out.width)}pt` }} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(out.svg)} />
     </div>
-  );
-}
-
-function Mol({ c, rd }: { c: Component; rd: MainModule | null }) {
-  const svg = useMemo(() => (rd && c.smiles ? smilesToSvg(rd, c.smiles, 200, 145) : null), [rd, c.smiles]);
-  return (
-    <figure className="rp-mol">
-      {svg ? (
-        <img alt={c.name} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} />
-      ) : (
-        <span className="rp-mol-text">{c.formula ?? c.name}</span>
-      )}
-      <figcaption>{c.name}</figcaption>
-    </figure>
   );
 }
