@@ -12,6 +12,7 @@ import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { withAbbrs } from '../chem/abbr';
 import { schemeSvg, unitsToPt, type SchemeLabels } from '../chem/scheme';
+import type { SchemeLook } from './ReactionPreview';
 import { findCid } from '../chem/resolve';
 import type { ReagentLot } from '../chem/lots';
 import { doiUrl, formatReference } from '../chem/refs';
@@ -27,6 +28,12 @@ interface Props {
   rd: MainModule | null;
   /** Scheme text: abbreviations or full names. */
   labels?: SchemeLabels;
+  /** Scheme style (shared with the Word export). */
+  look: SchemeLook;
+  onLook: (v: SchemeLook) => void;
+  /** Export the same report as Word. */
+  onWord?: () => void;
+  wordBusy?: boolean;
   /** Saved reaction on the server, to list its attachments. */
   reactionId?: string;
   onChange: (r: Reaction) => void;
@@ -35,7 +42,7 @@ interface Props {
 
 type SafetyMap = Record<string, PubChemSafety | null>;
 
-export default function Report({ rxn, units, rd, labels, reactionId, onChange, onClose }: Props) {
+export default function Report({ rxn, units, rd, labels, look, onLook, onWord, wordBusy, reactionId, onChange, onClose }: Props) {
   const { t, lang } = useI18n();
   const shown = useMemo(() => withAbbrs(rd, rxn), [rd, rxn]);
   const abbr = (c: Component) => shown.components.find((x) => x.id === c.id)?.abbr;
@@ -168,6 +175,16 @@ export default function Report({ rxn, units, rd, labels, reactionId, onChange, o
           <input type="checkbox" checked={withScheme} onChange={(e) => setWithScheme(e.target.checked)} />
           {t.report.includeScheme}
         </label>
+        {withScheme && (
+          <div className="seg" role="group" aria-label={t.report.schemeStyle} title={t.report.schemeStyleTip}>
+            <span className="seg-label">{t.report.schemeStyle}</span>
+            {(['mono', 'color'] as const).map((v) => (
+              <button key={v} className={look === v ? 'on' : ''} aria-pressed={look === v} onClick={() => onLook(v)}>
+                {t.scheme.looks[v]}
+              </button>
+            ))}
+          </div>
+        )}
         <label className="check">
           <input type="checkbox" checked={withSafety} onChange={(e) => setWithSafety(e.target.checked)} />
           {t.report.includeSafety}
@@ -175,6 +192,9 @@ export default function Report({ rxn, units, rd, labels, reactionId, onChange, o
         {progress && <span className="muted small">{t.report.fetching.replace('{a}', String(progress[0])).replace('{b}', String(progress[1]))}</span>}
         <span className="grow" />
         <button className="ghost" onClick={onClose}>{t.close}</button>
+        {onWord && (
+          <button className="ghost" disabled={wordBusy} title={t.office.word} onClick={onWord}>Word</button>
+        )}
         <button onClick={print} title={t.report.pdfTip}>{t.report.savePdf}</button>
       </div>
 
@@ -204,7 +224,7 @@ export default function Report({ rxn, units, rd, labels, reactionId, onChange, o
           {withScheme && (
             <section>
               <h2>{t.preview}</h2>
-              <Scheme rxn={shown} rd={rd} labels={labels} />
+              <Scheme rxn={shown} rd={rd} labels={labels} color={look === 'color'} />
               {rxn.conditions && (
                 <p className="rp-cond">
                   <span>{t.conditions}</span>
@@ -484,8 +504,8 @@ function Sub({ c, abbr }: { c: Component; abbr?: string }) {
 }
 
 /** Black-and-white scheme at its printed (ACS) size; conditions are listed below it. */
-function Scheme({ rxn, rd, labels }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels }) {
-  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }, { labels }), [rd, rxn, labels]);
+function Scheme({ rxn, rd, labels, color }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels; color: boolean }) {
+  const out = useMemo(() => schemeSvg(rd, { ...rxn, conditions: '' }, { labels, color }), [rd, rxn, labels, color]);
   if (!out) return null;
   return (
     <div className="rp-scheme">

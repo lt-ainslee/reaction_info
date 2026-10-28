@@ -81,6 +81,8 @@ export default function App() {
   const [reportOpen, setReportOpen] = useState(false);
   const [look, setLook] = useState<SchemeLook>(() => loadPref('schemeLook', ['color', 'mono'] as const));
   const [labels, setLabels] = useState<SchemeLabels>(() => loadPref('schemeLabels', ['abbr', 'name'] as const));
+  // Scheme style in the PDF / Word reports (chosen in the report dialog).
+  const [reportLook, setReportLook] = useState<SchemeLook>(() => loadPref('reportLook', ['mono', 'color'] as const));
   const [abbrsOpen, setAbbrsOpen] = useState(false);
   const abbrTable = useAbbrs();
   // The reaction with every compound's effective abbreviation, for drawing.
@@ -198,7 +200,7 @@ export default function App() {
       const [m, lib] = await Promise.all([import('./office/report'), lotRepo.list().catch(() => [])]);
       const used = new Set(runsOf(rxn).flatMap((r) => r.data.components.map((c) => c.lot?.lotId).filter(Boolean)));
       const lots = new Map(lib.filter((l) => used.has(l.id)).map((l) => [l.id, l]));
-      const input = { rxn: shown, units, t, rd, lots, labels };
+      const input = { rxn: shown, units, t, rd, lots, labels, schemeColor: reportLook === 'color' };
       if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
       else saveBlob(m.excelWorkbook(input), `${fileBase}.xlsx`);
     } catch (e) {
@@ -435,7 +437,7 @@ export default function App() {
                     {t.exportMd}
                   </button>
                   <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
-                  <button disabled={building} title={t.office.word} onClick={() => exportOffice('word')}>Word</button>
+                  <button disabled={building} title={`${t.office.word}\n${t.report.schemeStyle}: ${t.scheme.looks[reportLook]}`} onClick={() => exportOffice('word')}>Word</button>
                   <button disabled={building} title={t.office.excel} onClick={() => exportOffice('excel')}>Excel</button>
                 </div>
                 {run.status === 'planned' && (
@@ -557,7 +559,22 @@ export default function App() {
       {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={addLot} onNotify={notify} />}
       {flash && <div className="toast">{flash}</div>}
       {reportOpen && (
-        <Report rxn={rxn} units={units} rd={rd} labels={labels} reactionId={remote ? savedId : undefined} onChange={setRxn} onClose={() => setReportOpen(false)} />
+        <Report
+          rxn={rxn}
+          units={units}
+          rd={rd}
+          labels={labels}
+          look={reportLook}
+          onLook={(v) => {
+            setReportLook(v);
+            savePref('reportLook', v);
+          }}
+          onWord={() => exportOffice('word')}
+          wordBusy={building}
+          reactionId={remote ? savedId : undefined}
+          onChange={setRxn}
+          onClose={() => setReportOpen(false)}
+        />
       )}
       {editor && (
         <Suspense fallback={<div className="modal-backdrop"><p className="toast">{t.editorLoading}</p></div>}>

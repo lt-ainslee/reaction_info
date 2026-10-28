@@ -21,6 +21,8 @@ export interface ReportInput {
   lots?: Map<string, ReagentLot>;
   /** Scheme text: abbreviations (components carry them, see withAbbrs) or names. */
   labels?: SchemeLabels;
+  /** Scheme structures with atom colours (default black and white, ChemDraw style). */
+  schemeColor?: boolean;
 }
 
 // ---- procedure (Tiptap JSON) → Word blocks ----
@@ -92,8 +94,8 @@ export function procedureBlocks(doc: PNode, observation: string): Block[] {
 // ---- reaction scheme as a PNG ----
 
 /** The black-and-white scheme; width / height in px at its printed (ACS) size. */
-export async function schemePng(rxn: Reaction, rd: MainModule | null, labels?: SchemeLabels): Promise<{ png: Uint8Array; width: number; height: number } | null> {
-  const out = schemeSvg(rd, rxn, { background: true, labels });
+export async function schemePng(rxn: Reaction, rd: MainModule | null, labels?: SchemeLabels, color = false): Promise<{ png: Uint8Array; width: number; height: number } | null> {
+  const out = schemeSvg(rd, rxn, { background: true, labels, color });
   if (!out) return null;
   const blob = await svgToPng(out.svg, out.width, out.height);
   if (!blob) return null;
@@ -117,7 +119,7 @@ const equivText = (c: Component, e: number) => (c.role === 'catalyst' ? `${fmt(e
 
 // ---- Word ----
 
-export async function wordReport({ rxn, units, t, rd, lots, labels }: ReportInput): Promise<Blob> {
+export async function wordReport({ rxn, units, t, rd, lots, labels, schemeColor }: ReportInput): Promise<Blob> {
   const run = activeRun(rxn);
   const code = runCode(rxn, run);
   const am = AMOUNT_UNITS[units.amount];
@@ -144,7 +146,7 @@ export async function wordReport({ rxn, units, t, rd, lots, labels }: ReportInpu
     ),
   );
 
-  const scheme = await schemePng(rxn, rd, labels);
+  const scheme = await schemePng(rxn, rd, labels, schemeColor);
   if (scheme) {
     b.push(p(t.preview, { style: 'Heading1' }));
     const k = Math.min(0.75, 450 / scheme.width); // px → pt, fit the A4 text width

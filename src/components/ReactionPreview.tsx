@@ -99,8 +99,9 @@ function MonoScheme({ rxn, rd, rdError, labels, onSelect }: Omit<Props, 'look'>)
       {out && (
         <div
           className="rx-cd"
-          // Shown at 1.6× the printed (ACS) size, shrunk to fit narrow screens.
-          style={{ ['--cd-w' as string]: `${((unitsToPt(out.width) * 4) / 3) * 1.6}px` }}
+          // Shown at 1.2× the printed (ACS) size — labels ≈ 16 px next to 13 px UI
+          // text — and shrunk to fit narrow screens.
+          style={{ ['--cd-w' as string]: `${((unitsToPt(out.width) * 4) / 3) * 1.2}px` }}
           onClick={(e) => {
             const id = (e.target as Element).closest('[data-cid]')?.getAttribute('data-cid');
             if (id) onSelect(id);
