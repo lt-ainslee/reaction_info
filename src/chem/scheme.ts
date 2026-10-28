@@ -241,8 +241,8 @@ const n2 = (v: number) => +v.toFixed(2);
 const BLACK: Record<number, number[]> = {};
 for (let z = 0; z <= 118; z++) BLACK[z] = [0, 0, 0];
 
-/** One structure in black, ACS proportions; `body` is the inner SVG markup. */
-export function monoMolSvg(rd: MainModule, smiles: string): { body: string; w: number; h: number } | null {
+/** One structure in ACS proportions, black (default) or with RDKit's atom colours; `body` is the inner SVG markup. */
+export function monoMolSvg(rd: MainModule, smiles: string, color = false): { body: string; w: number; h: number } | null {
   const mol = rd.get_mol(smiles);
   if (!mol) return null;
   try {
@@ -258,17 +258,15 @@ export function monoMolSvg(rd: MainModule, smiles: string): { body: string; w: n
         additionalAtomLabelPadding: 0.05,
         padding: 0.04,
         clearBackground: false,
-        atomColourPalette: BLACK,
+        ...(color ? {} : { atomColourPalette: BLACK }),
       }),
     );
     const size = svg.match(/viewBox='0 0 ([\d.]+) ([\d.]+)'/);
     const start = svg.indexOf('<!-- END OF HEADER -->');
     if (!size || start < 0) return null;
-    const body = svg
-      .slice(start + '<!-- END OF HEADER -->'.length, svg.lastIndexOf('</svg>'))
-      // Anything still coloured (e.g. stereo annotations) goes black too.
-      .replace(/#(?!000000)[0-9A-Fa-f]{6}\b/g, '#000000')
-      .trim();
+    let body = svg.slice(start + '<!-- END OF HEADER -->'.length, svg.lastIndexOf('</svg>')).trim();
+    // Anything still coloured (e.g. stereo annotations) goes black too.
+    if (!color) body = body.replace(/#(?!000000)[0-9A-Fa-f]{6}\b/g, '#000000');
     return { body, w: +size[1], h: +size[2] };
   } finally {
     mol.delete();
@@ -308,6 +306,8 @@ export interface SchemeSvgOptions {
   background?: boolean;
   /** Abbreviations (default) or full names. */
   labels?: SchemeLabels;
+  /** Structures with atom colours instead of black and white. */
+  color?: boolean;
 }
 
 /** The whole scheme as one standalone SVG (null when there is nothing to draw). */
@@ -320,7 +320,7 @@ export function schemeSvg(rd: MainModule | null, rxn: Reaction, opts: SchemeSvgO
 
   const bodies = new Map<string, string>();
   const item = (c: Component): SchemeItem => {
-    const mol = rd && c.smiles ? monoMolSvg(rd, c.smiles) : null;
+    const mol = rd && c.smiles ? monoMolSvg(rd, c.smiles, opts.color) : null;
     if (mol) {
       bodies.set(c.id, mol.body);
       return { c, w: mol.w, h: mol.h, name: nameLines(c, mol.w, labels) };
