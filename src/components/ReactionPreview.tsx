@@ -1,16 +1,18 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { Fragment, useMemo } from 'react';
 import { smilesToSvg } from '../chem/rdkit';
-import { schemeSvg, unitsToPt } from '../chem/scheme';
+import { schemeSvg, unitsToPt, type SchemeLabels } from '../chem/scheme';
 import type { Component, Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
 
 interface Props {
+  /** With effective abbreviations filled in (see chem/abbr withAbbrs). */
   rxn: Reaction;
   rd: MainModule | null;
   rdError: boolean;
   /** 'color': RDKit colours, interactive layout; 'mono': black-and-white scheme as exported. */
   look: SchemeLook;
+  labels: SchemeLabels;
   onSelect: (id: string) => void;
 }
 
@@ -19,9 +21,10 @@ export type SchemeLook = 'color' | 'mono';
 // Layout: [reactants] → [products], each side wraps on its own so wide
 // molecules never push the arrow off screen; on narrow screens the three
 // blocks stack and the arrow points down.
-export function ReactionPreview({ rxn, rd, rdError, look, onSelect }: Props) {
+export function ReactionPreview({ rxn, rd, rdError, look, labels, onSelect }: Props) {
   const { t } = useI18n();
-  if (look === 'mono' && (rxn.components.length || rxn.conditions)) return <MonoScheme rxn={rxn} rd={rd} rdError={rdError} onSelect={onSelect} />;
+  if (look === 'mono' && (rxn.components.length || rxn.conditions)) return <MonoScheme rxn={rxn} rd={rd} rdError={rdError} labels={labels} onSelect={onSelect} />;
+  const text = (c: Component) => (labels === 'abbr' && c.abbr) || c.name;
   const by = (roles: Component['role'][]) => rxn.components.filter((c) => roles.includes(c.role));
   const left = by(['reactant']);
   const above = by(['reagent', 'catalyst']);
@@ -35,7 +38,7 @@ export function ReactionPreview({ rxn, rd, rdError, look, onSelect }: Props) {
       list.map((c, i) => (
         <Fragment key={c.id}>
           {i > 0 && <span className="rx-plus">+</span>}
-          <Mol c={c} rd={rd} onClick={() => onSelect(c.id)} />
+          <Mol c={c} rd={rd} text={text(c)} onClick={() => onSelect(c.id)} />
         </Fragment>
       ))
     ) : (
@@ -43,7 +46,7 @@ export function ReactionPreview({ rxn, rd, rdError, look, onSelect }: Props) {
     );
 
   const label = (c: Component) =>
-    c.role === 'catalyst' ? `${c.name} (${+(c.equiv * 100).toFixed(2)} mol%)` : c.name;
+    c.role === 'catalyst' ? `${text(c)} (${+(c.equiv * 100).toFixed(2)} mol%)` : text(c);
 
   return (
     <div className="rx-wrap">
@@ -59,7 +62,7 @@ export function ReactionPreview({ rxn, rd, rdError, look, onSelect }: Props) {
           <div className="rx-arrow-line" aria-hidden />
           <div className="rx-arrow-text rx-below">
             {below.map((c) => (
-              <button key={c.id} className="rx-agent" onClick={() => onSelect(c.id)}>{c.name}</button>
+              <button key={c.id} className="rx-agent" onClick={() => onSelect(c.id)}>{text(c)}</button>
             ))}
             {rxn.conditions && <span className="rx-conditions">{rxn.conditions}</span>}
           </div>
@@ -70,26 +73,26 @@ export function ReactionPreview({ rxn, rd, rdError, look, onSelect }: Props) {
   );
 }
 
-function Mol({ c, rd, onClick }: { c: Component; rd: MainModule | null; onClick: () => void }) {
+function Mol({ c, rd, text, onClick }: { c: Component; rd: MainModule | null; text: string; onClick: () => void }) {
   const svg = useMemo(() => (rd && c.smiles ? smilesToSvg(rd, c.smiles) : null), [rd, c.smiles]);
   return (
-    <button className="rx-mol" onClick={onClick} title={c.smiles ?? c.formula}>
+    <button className="rx-mol" onClick={onClick} title={[text !== c.name && c.name, c.smiles ?? c.formula].filter(Boolean).join('\n')}>
       {svg ? (
         <img className="rx-mol-img" alt={c.name} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} />
       ) : (
         <span className="rx-mol-text">{c.formula ?? c.name}</span>
       )}
-      <span className="rx-mol-name">{c.name}</span>
+      <span className="rx-mol-name">{text}</span>
     </button>
   );
 }
 
 /** The exported SVG itself (what you see is what you download); click a compound to select it. */
-function MonoScheme({ rxn, rd, rdError, onSelect }: Omit<Props, 'look'>) {
+function MonoScheme({ rxn, rd, rdError, labels, onSelect }: Omit<Props, 'look'>) {
   const { t } = useI18n();
   // Redraw only when something drawn changes, not on every amount edit.
-  const key = JSON.stringify([rxn.conditions, rxn.components.map((c) => [c.id, c.role, c.name, c.smiles, c.formula, c.role === 'catalyst' && c.equiv])]);
-  const out = useMemo(() => schemeSvg(rd, rxn, { interactive: true }), [rd, key]);
+  const key = JSON.stringify([rxn.conditions, rxn.components.map((c) => [c.id, c.role, c.name, c.abbr, c.smiles, c.formula, c.role === 'catalyst' && c.equiv])]);
+  const out = useMemo(() => schemeSvg(rd, rxn, { interactive: true, labels }), [rd, key, labels]);
   return (
     <div className="rx-wrap">
       {!rd && !rdError && <p className="muted small">{t.rdkitLoading}</p>}

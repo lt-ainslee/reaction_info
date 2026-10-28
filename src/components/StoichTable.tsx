@@ -19,6 +19,8 @@ interface Props {
   pending: ReadonlySet<string>;
   /** Show the "actual amount" column (runs being done or finished). */
   showActual?: boolean;
+  /** Effective abbreviation of each compound (by id). */
+  abbrs?: ReadonlyMap<string, string>;
 }
 
 const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent', 'product'];
@@ -27,7 +29,7 @@ type FormChoice = 'neat' | Phase | 'solutionM' | 'solutionWt';
 const FORM_CHOICES: FormChoice[] = ['solid', 'liquid', 'gas', 'solutionM', 'solutionWt'];
 const formChoice = (c: Component): FormChoice => (c.form === 'neat' ? c.phase ?? 'neat' : c.form);
 
-export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove, pending, showActual }: Props) {
+export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove, pending, showActual, abbrs }: Props) {
   const { t } = useI18n();
   const inputs = rxn.components.filter((c) => c.role !== 'product');
   const products = rxn.components.filter((c) => c.role === 'product');
@@ -77,6 +79,9 @@ export function StoichTable({ rxn, units, onUnits, onChange, onSelect, onRemove,
           <span className="name-text">
             <button className="link name" onClick={() => onSelect(c.id)}>{c.name}</button>
             <span className="name-meta">
+              {abbrs?.get(c.id) && abbrs.get(c.id) !== c.name && (
+                <span className="abbr-chip" title={t.abbr.chipTip}>{abbrs.get(c.id)}</span>
+              )}
               {c.formula && <span className="formula">{c.formula}</span>}
               {c.id === rxn.refId && withRef && <span className="badge">{t.col.ref}</span>}
             </span>

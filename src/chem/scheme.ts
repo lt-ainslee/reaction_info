@@ -159,20 +159,28 @@ export interface SchemeLayout {
   below: { lines: Line[]; ys: number[] };
 }
 
-const catalystLabel = (c: Component) =>
-  c.role === 'catalyst' ? `${c.name} (${+(c.equiv * 100).toFixed(2)} mol%)` : c.name;
+/** 'abbr': write a compound's abbreviation (`abbr`, when set) instead of its name. */
+export type SchemeLabels = 'abbr' | 'name';
 
-export function schemeText(rxn: Reaction): { above: Line[]; below: Line[] } {
-  const above = rxn.components.filter((c) => c.role === 'reagent' || c.role === 'catalyst').map((c) => richText(catalystLabel(c), c.id));
-  const below = rxn.components.filter((c) => c.role === 'solvent').map((c) => richText(c.name, c.id));
+const labelOf = (c: Component, labels: SchemeLabels) => (labels === 'abbr' && c.abbr) || c.name;
+/** Text drawn in place of a missing structure. */
+const standIn = (c: Component, labels: SchemeLabels) => (labels === 'abbr' && c.abbr) || c.formula || c.name;
+
+const agentLabel = (c: Component, labels: SchemeLabels) =>
+  c.role === 'catalyst' ? `${labelOf(c, labels)} (${+(c.equiv * 100).toFixed(2)} mol%)` : labelOf(c, labels);
+
+export function schemeText(rxn: Reaction, labels: SchemeLabels = 'abbr'): { above: Line[]; below: Line[] } {
+  const above = rxn.components.filter((c) => c.role === 'reagent' || c.role === 'catalyst').map((c) => richText(agentLabel(c, labels), c.id));
+  const below = rxn.components.filter((c) => c.role === 'solvent').map((c) => richText(labelOf(c, labels), c.id));
   const belowLines = wrap(below, MAX_TEXT_W);
   if (rxn.conditions?.trim()) belowLines.push(...wrap([richText(rxn.conditions.trim())], MAX_TEXT_W));
   return { above: wrap(above, MAX_TEXT_W), below: belowLines };
 }
 
-/** Name lines for a structure at most `w` wide (at least ~5 bonds). */
-export function nameLines(c: Component, w: number): Line[] {
-  return c.name ? wrap([richText(c.name, c.id)], Math.max(w, BOND * 5)) : [];
+/** Label lines under a structure at most `w` wide (at least ~5 bonds). */
+export function nameLines(c: Component, w: number, labels: SchemeLabels = 'abbr'): Line[] {
+  const text = labelOf(c, labels);
+  return text ? wrap([richText(text, c.id)], Math.max(w, BOND * 5)) : [];
 }
 
 export function layoutScheme(left: SchemeItem[], right: SchemeItem[], above: Line[], below: Line[]): SchemeLayout {
@@ -298,13 +306,16 @@ export interface SchemeSvgOptions {
   interactive?: boolean;
   /** Paint a white background (PNG / Word). */
   background?: boolean;
+  /** Abbreviations (default) or full names. */
+  labels?: SchemeLabels;
 }
 
 /** The whole scheme as one standalone SVG (null when there is nothing to draw). */
 export function schemeSvg(rd: MainModule | null, rxn: Reaction, opts: SchemeSvgOptions = {}): { svg: string; width: number; height: number } | null {
   const left = rxn.components.filter((c) => c.role === 'reactant');
   const right = rxn.components.filter((c) => c.role === 'product');
-  const { above, below } = schemeText(rxn);
+  const labels = opts.labels ?? 'abbr';
+  const { above, below } = schemeText(rxn, labels);
   if (!left.length && !right.length && !above.length && !below.length) return null;
 
   const bodies = new Map<string, string>();
@@ -312,12 +323,11 @@ export function schemeSvg(rd: MainModule | null, rxn: Reaction, opts: SchemeSvgO
     const mol = rd && c.smiles ? monoMolSvg(rd, c.smiles) : null;
     if (mol) {
       bodies.set(c.id, mol.body);
-      return { c, w: mol.w, h: mol.h, name: nameLines(c, mol.w) };
+      return { c, w: mol.w, h: mol.h, name: nameLines(c, mol.w, labels) };
     }
-    // No structure: the formula (or name) stands in for it.
-    const label = richText(c.formula || c.name, c.id);
-    const w = lineWidth(label) + BOND * 0.4;
-    return { c, w, h: BOND * 1.4, name: c.formula && c.name ? nameLines(c, w) : [] };
+    // No structure: the abbreviation / formula / name stands in for it.
+    const w = lineWidth(richText(standIn(c, labels))) + BOND * 0.4;
+    return { c, w, h: BOND * 1.4, name: standIn(c, labels) !== labelOf(c, labels) ? nameLines(c, w, labels) : [] };
   };
   const L = layoutScheme(left.map(item), right.map(item), above, below);
   const i = !!opts.interactive;
@@ -329,7 +339,7 @@ export function schemeSvg(rd: MainModule | null, rxn: Reaction, opts: SchemeSvgO
     const g: string[] = [];
     if (i) g.push(`<rect class="cd-hit" x="${n2(it.x)}" y="${n2(it.y)}" width="${n2(it.w)}" height="${n2(it.h)}" fill="transparent"/>`);
     if (body) g.push(`<g transform="translate(${n2(it.x)},${n2(it.y)})">${body}</g>`);
-    else g.push(svgText(richText(it.c.formula || it.c.name), it.x + it.w / 2, it.y + it.h / 2 + FS * 0.35, false).replace('<text ', '<text font-weight="bold" '));
+    else g.push(svgText(richText(standIn(it.c, labels)), it.x + it.w / 2, it.y + it.h / 2 + FS * 0.35, false).replace('<text ', '<text font-weight="bold" '));
     it.name.forEach((l, k) => g.push(svgText(l, it.x + it.w / 2, it.nameY + k * LINE_H, false)));
     parts.push(i ? `<g class="cd-item" data-cid="${esc(it.c.id)}">${g.join('')}</g>` : g.join('\n'));
   }
@@ -475,10 +485,10 @@ const cdRuns = (l: Line, bold = false) =>
     .join('');
 
 /** ChemDraw document of the scheme: editable structures, arrow, text and the reaction step. */
-export function schemeCdxml(rd: MainModule | null, rxn: Reaction): string | null {
+export function schemeCdxml(rd: MainModule | null, rxn: Reaction, labels: SchemeLabels = 'abbr'): string | null {
   const left = rxn.components.filter((c) => c.role === 'reactant');
   const right = rxn.components.filter((c) => c.role === 'product');
-  const { above, below } = schemeText(rxn);
+  const { above, below } = schemeText(rxn, labels);
   if (!left.length && !right.length && !above.length && !below.length) return null;
 
   const pad = BOND * 0.45; // room for atom labels around the atom box
@@ -487,11 +497,10 @@ export function schemeCdxml(rd: MainModule | null, rxn: Reaction): string | null
     const m = rd && c.smiles ? molForCdxml(rd, c.smiles) : null;
     if (m) {
       mols.set(c.id, m);
-      return { c, w: m.w + 2 * pad, h: m.h + 2 * pad, name: nameLines(c, m.w + 2 * pad) };
+      return { c, w: m.w + 2 * pad, h: m.h + 2 * pad, name: nameLines(c, m.w + 2 * pad, labels) };
     }
-    const label = richText(c.formula || c.name, c.id);
-    const w = lineWidth(label) + BOND * 0.4;
-    return { c, w, h: BOND * 1.4, name: c.formula && c.name ? nameLines(c, w) : [] };
+    const w = lineWidth(richText(standIn(c, labels))) + BOND * 0.4;
+    return { c, w, h: BOND * 1.4, name: standIn(c, labels) !== labelOf(c, labels) ? nameLines(c, w, labels) : [] };
   };
   const L = layoutScheme(left.map(item), right.map(item), above, below);
 
@@ -546,7 +555,7 @@ export function schemeCdxml(rd: MainModule | null, rxn: Reaction): string | null
       });
       out.push(`<fragment id="${fid}">\n${nodes.join('\n')}\n${bonds.join('\n')}\n</fragment>`);
     } else {
-      objectId.set(it.c.id, text(richText(it.c.formula || it.c.name), it.x + it.w / 2, it.y + it.h / 2 + FS * 0.35, true));
+      objectId.set(it.c.id, text(richText(standIn(it.c, labels)), it.x + it.w / 2, it.y + it.h / 2 + FS * 0.35, true));
     }
     it.name.forEach((l, k) => text(l, it.x + it.w / 2, it.nameY + k * LINE_H));
   }

@@ -1,5 +1,6 @@
 // API Worker: /api/* is handled here, everything else is served from the
 // static assets (wrangler.toml: run_worker_first = ["/api/*"]).
+import { handleAbbrs } from './abbrs';
 import { handleAttachments } from './attachments';
 import { error, json, type Env } from './http';
 import { handleLots } from './lots';
@@ -18,7 +19,8 @@ export default {
         return json({ ok: true, storage: 'd1', schema: SCHEMA_VERSION, files: !!env.FILES });
       }
       return (
-        (await handleAttachments(req, env, path)) ?? (await handleLots(req, env, path)) ?? (await handleReactions(req, env, path)) ?? error(404, 'no_route')
+        (await handleAttachments(req, env, path)) ?? (await handleLots(req, env, path)) ??
+        (await handleAbbrs(req, env, path)) ?? (await handleReactions(req, env, path)) ?? error(404, 'no_route')
       );
     } catch (e) {
       console.error(e);

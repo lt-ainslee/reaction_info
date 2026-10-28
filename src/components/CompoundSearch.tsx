@@ -1,5 +1,6 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { useMemo, useState } from 'react';
+import { entryToData } from '../chem/abbr';
 import { libraryToComponent } from '../chem/library';
 import { available, lotLabel, lotSearchText, type ReagentLot } from '../chem/lots';
 import { hitToData, resolveOne, searchAll, smilesToData, type CompoundData, type SearchResults } from '../chem/resolve';
@@ -65,7 +66,7 @@ export function CompoundSearch({ rd, onAdd, onAddLot, openEditor }: Props) {
   };
 
   const derivedMw = formulaMass(mFormula);
-  const empty = res && !res.local.length && !res.pubchem.length && !res.smiles;
+  const empty = res && !res.abbrs.length && !res.local.length && !res.pubchem.length && !res.smiles;
 
   return (
     <div className="search">
@@ -152,6 +153,15 @@ export function CompoundSearch({ rd, onAdd, onAddLot, openEditor }: Props) {
               onClick={() => add(smilesToData(rd, res.smiles!, res.pubchem[0]?.title, lang))}
             />
           )}
+          {res.abbrs.length > 0 && <h4>{t.abbr.tableResults}</h4>}
+          {res.abbrs.map((e) => (
+            <ResultItem
+              key={e.id}
+              title={`${e.abbr} — ${e.name}`}
+              sub={[e.formula, e.cas && `CAS ${e.cas}`, e.smiles && !e.cas && e.smiles].filter(Boolean).join(' · ') || t.abbr.title}
+              onClick={() => add(entryToData(e))}
+            />
+          ))}
           {res.local.length > 0 && <h4>{t.localResults}</h4>}
           {res.local.map((e) => (
             <ResultItem

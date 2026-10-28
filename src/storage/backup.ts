@@ -1,10 +1,12 @@
-// "Export all data" / "Restore from backup": every saved reaction and the
-// reagent lot library in one JSON file. Spectrum files are not included
+// "Export all data" / "Restore from backup": every saved reaction, the
+// reagent lot library and the abbreviation table in one JSON file. Spectrum files are not included
 // (they stay in R2). Restoring adds what is missing and never overwrites.
 // Backups of the browser-only derived version ("reaction-notebook-backup")
 // are read too: their reactions, with supplier labels turned into lots.
+import { normalizeAbbr, type AbbrEntry } from '../chem/abbr';
 import { normalizeLot, type LotSnapshot, type ReagentLot } from '../chem/lots';
 import type { Reaction } from '../chem/stoich';
+import { abbrRepo, refreshAbbrs } from './abbrs';
 import { apiRepo } from './apiRepo';
 import { repo, repoReady } from './index';
 import { localRepo } from './localRepo';
@@ -29,8 +31,14 @@ export async function exportAll(onProgress?: (done: number, total: number) => vo
     onProgress?.(i + 1, list.length);
   }
   const lots = await lotRepo.list();
-  const data = { app: BACKUP_TAG, version: 1, exportedAt: new Date().toISOString(), reactions, lots };
-  return { blob: new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }), reactions: reactions.length, lots: lots.length };
+  const abbrs = await abbrRepo.list();
+  const data = { app: BACKUP_TAG, version: 1, exportedAt: new Date().toISOString(), reactions, lots, abbrs };
+  return {
+    blob: new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }),
+    reactions: reactions.length,
+    lots: lots.length,
+    abbrs: abbrs.length,
+  };
 }
 
 /** The derived version stores supplier labels as `procurement` on components. */
@@ -56,7 +64,7 @@ function fromProcurement(raw: unknown): unknown {
   };
 }
 
-function entriesOf(data: Record<string, unknown>): { entries: BackupEntry[]; lots: ReagentLot[] } | null {
+function entriesOf(data: Record<string, unknown>): { entries: BackupEntry[]; lots: ReagentLot[]; abbrs: AbbrEntry[] } | null {
   const entries: BackupEntry[] = [];
   const take = (id: unknown, raw: unknown, updatedAt: unknown) => {
     const reaction = normalizeReaction(fromProcurement(raw));
@@ -71,20 +79,21 @@ function entriesOf(data: Record<string, unknown>): { entries: BackupEntry[]; lot
   if (data.app === BACKUP_TAG && Array.isArray(data.reactions)) {
     for (const e of data.reactions as Record<string, unknown>[]) take(e?.id, e?.reaction, e?.updatedAt);
     const lots = Array.isArray(data.lots) ? data.lots.map(normalizeLot).filter((x): x is ReagentLot => !!x) : [];
-    return { entries, lots };
+    const abbrs = Array.isArray(data.abbrs) ? data.abbrs.map(normalizeAbbr).filter((x): x is AbbrEntry => !!x) : [];
+    return { entries, lots, abbrs };
   }
   if (data.app === 'reaction-notebook-backup' && typeof data.data === 'object' && data.data) {
     const d = data.data as Record<string, unknown>;
     for (const e of (Array.isArray(d.saved) ? d.saved : []) as Record<string, unknown>[]) {
       take(e?.id, e?.reaction ?? e, e?.updatedAt ?? e?.savedAt);
     }
-    return { entries, lots: [] };
+    return { entries, lots: [], abbrs: [] };
   }
   return null;
 }
 
-/** Add reactions and lots from a backup that aren't stored yet (by id). */
-export async function restore(text: string): Promise<{ reactions: number; lots: number } | null> {
+/** Add reactions, lots and abbreviations from a backup that aren't stored yet (by id). */
+export async function restore(text: string): Promise<{ reactions: number; lots: number; abbrs: number } | null> {
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(text);
@@ -109,5 +118,13 @@ export async function restore(text: string): Promise<{ reactions: number; lots: 
     await lotRepo.save(lot);
     lots++;
   }
-  return { reactions, lots };
+  const haveAbbrs = new Set((await abbrRepo.list()).map((e) => e.id));
+  let abbrs = 0;
+  for (const e of parsed.abbrs) {
+    if (haveAbbrs.has(e.id)) continue;
+    await abbrRepo.save(e);
+    abbrs++;
+  }
+  if (abbrs) await refreshAbbrs();
+  return { reactions, lots, abbrs };
 }
