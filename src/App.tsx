@@ -17,7 +17,7 @@ import { Inventory } from './components/Inventory';
 import { NumInput } from './components/NumInput';
 import { Procedure } from './components/Procedure';
 import { ReactionInput, type ApplyMode } from './components/ReactionInput';
-import { ReactionPreview } from './components/ReactionPreview';
+import { ReactionPreview, type SchemeLook } from './components/ReactionPreview';
 import { References } from './components/References';
 import { RunBar } from './components/RunBar';
 import { SavedMenu } from './components/SavedMenu';
@@ -44,6 +44,14 @@ function loadUnits(): Units {
   }
 }
 
+function loadLook(): SchemeLook {
+  try {
+    return localStorage.getItem('schemeLook') === 'mono' ? 'mono' : 'color';
+  } catch {
+    return 'color';
+  }
+}
+
 export default function App() {
   const { t, lang, setLang } = useI18n();
   const [rxn, setRxn] = useState<Reaction>(() => loadDraft() ?? emptyReaction());
@@ -58,6 +66,7 @@ export default function App() {
   const [planYield, setPlanYield] = useState<number | undefined>(80);
   const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [look, setLook] = useState<SchemeLook>(loadLook);
   /** Graph node to reveal in the attachments card (e.g. a lot from the side panel). */
   const [focusNode, setFocusNode] = useState<string | null>(null);
   const pending = useAutoLookup(rxn, setRxn, rd);
@@ -181,6 +190,22 @@ export default function App() {
     }
   };
 
+  /** The scheme in black and white (ChemDraw style): SVG / PNG picture, editable CDXML, or RXN structures. */
+  const exportScheme = async (f: 'svg' | 'png' | 'cdxml' | 'rxn') => {
+    const m = await import('./chem/scheme');
+    if (f === 'svg' || f === 'png') {
+      const out = m.schemeSvg(rd, rxn, { background: f === 'png' });
+      if (!out) return;
+      if (f === 'svg') return saveBlob(new Blob([out.svg], { type: 'image/svg+xml' }), `${fileBase}.svg`);
+      const png = await m.svgToPng(out.svg, out.width, out.height).catch(() => null);
+      return png ? saveBlob(png, `${fileBase}.png`) : notify(t.saveFailed);
+    }
+    if (!rd) return notify(t.rdkitLoading);
+    const text = f === 'cdxml' ? m.schemeCdxml(rd, rxn) : m.schemeRxnfile(rd, rxn);
+    if (!text) return notify(t.scheme.noStructures);
+    saveBlob(new Blob([text], { type: f === 'cdxml' ? 'chemical/x-cdxml' : 'chemical/x-mdl-rxnfile' }), `${fileBase}.${f}`);
+  };
+
   const confirmDiscard = (what: string) => !dirty || confirm(t.unsaved + ' — ' + what + '?');
 
   const selectedC = rxn.components.find((c) => c.id === selected);
@@ -300,8 +325,38 @@ export default function App() {
         <section className="card">
           <div className="card-head">
             <h2>{t.preview}</h2>
+            <div className="card-tools no-print">
+              <div className="seg" role="group" aria-label={t.scheme.look}>
+                {(['color', 'mono'] as const).map((v) => (
+                  <button
+                    key={v}
+                    className={look === v ? 'on' : ''}
+                    aria-pressed={look === v}
+                    title={t.scheme.lookTips[v]}
+                    onClick={() => {
+                      setLook(v);
+                      try {
+                        localStorage.setItem('schemeLook', v);
+                      } catch {
+                        /* not remembered */
+                      }
+                    }}
+                  >
+                    {t.scheme.looks[v]}
+                  </button>
+                ))}
+              </div>
+              <div className="seg" role="group" aria-label={t.scheme.export}>
+                <span className="seg-label">{t.scheme.export}</span>
+                {(['svg', 'png', 'cdxml', 'rxn'] as const).map((f) => (
+                  <button key={f} title={t.scheme.formatTips[f]} disabled={!rxn.components.length} onClick={() => exportScheme(f)}>
+                    {f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-          <ReactionPreview rxn={rxn} rd={rd} rdError={rdError} onSelect={setSelected} />
+          <ReactionPreview rxn={rxn} rd={rd} rdError={rdError} look={look} onSelect={setSelected} />
           {rxn.components.some((c) => c.smiles) && (
             <details className="smiles-details">
               <summary>SMILES</summary>

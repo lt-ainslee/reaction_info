@@ -1,6 +1,6 @@
 // Word report and Excel workbook of a reaction (lazy-loaded; browser only).
 import type { MainModule } from '@rdkit/rdkit';
-import { smilesToSvg } from '../chem/rdkit';
+import { schemeSvg, svgToPng, unitsToPt } from '../chem/scheme';
 import { formatReference, doiUrl } from '../chem/refs';
 import type { ReagentLot } from '../chem/lots';
 import { activeRun, runCode, runsOf, runYield } from '../chem/runs';
@@ -88,81 +88,14 @@ export function procedureBlocks(doc: PNode, observation: string): Block[] {
 
 // ---- reaction scheme as a PNG ----
 
-function loadSvg(svg: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  });
-}
-
+/** The black-and-white scheme; width / height in px at its printed (ACS) size. */
 export async function schemePng(rxn: Reaction, rd: MainModule | null): Promise<{ png: Uint8Array; width: number; height: number } | null> {
-  const left = rxn.components.filter((c) => c.role === 'reactant');
-  const right = rxn.components.filter((c) => c.role === 'product');
-  if (!left.length && !right.length) return null;
-  const above = rxn.components.filter((c) => c.role === 'reagent' || c.role === 'catalyst').map((c) => c.name).join(', ');
-  const below = [rxn.components.filter((c) => c.role === 'solvent').map((c) => c.name).join(', '), rxn.conditions].filter(Boolean).join('; ');
-  const W = 180;
-  const H = 130;
-  const arrowW = Math.max(150, Math.min(320, Math.max(above.length, below.length) * 7));
-  const items = [...left.map((c) => ({ c })), { arrow: true as const }, ...right.map((c) => ({ c }))];
-  const plusW = 26;
-  const width = items.reduce((w, it, i) => w + ('arrow' in it ? arrowW : W) + (i && !('arrow' in it) && !('arrow' in items[i - 1]) ? plusW : 0), 0) + 20;
-  const height = H + 34;
-  const scale = 2;
-  const canvas = document.createElement('canvas');
-  canvas.width = width * scale;
-  canvas.height = height * scale;
-  const g = canvas.getContext('2d')!;
-  g.scale(scale, scale);
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, width, height);
-  g.fillStyle = '#1d2330';
-  g.strokeStyle = '#1d2330';
-  g.textAlign = 'center';
-  let xPos = 10;
-  for (let i = 0; i < items.length; i++) {
-    const it = items[i];
-    if ('arrow' in it) {
-      const y = H / 2 + 4;
-      g.lineWidth = 1.4;
-      g.beginPath();
-      g.moveTo(xPos + 8, y);
-      g.lineTo(xPos + arrowW - 10, y);
-      g.stroke();
-      g.beginPath();
-      g.moveTo(xPos + arrowW - 8, y);
-      g.lineTo(xPos + arrowW - 18, y - 5);
-      g.lineTo(xPos + arrowW - 18, y + 5);
-      g.closePath();
-      g.fill();
-      g.font = '11px Arial, "Microsoft YaHei", sans-serif';
-      if (above) g.fillText(above.slice(0, 60), xPos + arrowW / 2, y - 10);
-      if (below) g.fillText(below.slice(0, 60), xPos + arrowW / 2, y + 18);
-      xPos += arrowW;
-      continue;
-    }
-    if (i && !('arrow' in items[i - 1])) {
-      g.font = '18px Arial, sans-serif';
-      g.fillText('+', xPos + plusW / 2, H / 2 + 10);
-      xPos += plusW;
-    }
-    const svg = rd && it.c.smiles ? smilesToSvg(rd, it.c.smiles, W, H) : null;
-    if (svg) {
-      try {
-        g.drawImage(await loadSvg(svg), xPos, 0, W, H);
-      } catch {
-        /* name only */
-      }
-    }
-    g.font = '12px Arial, "Microsoft YaHei", sans-serif';
-    g.fillText(it.c.name.slice(0, 28), xPos + W / 2, H + 20);
-    xPos += W;
-  }
-  const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+  const out = schemeSvg(rd, rxn, { background: true });
+  if (!out) return null;
+  const blob = await svgToPng(out.svg, out.width, out.height);
   if (!blob) return null;
-  return { png: new Uint8Array(await blob.arrayBuffer()), width, height };
+  const px = (v: number) => (unitsToPt(v) * 4) / 3;
+  return { png: new Uint8Array(await blob.arrayBuffer()), width: px(out.width), height: px(out.height) };
 }
 
 // ---- shared helpers ----
@@ -211,7 +144,8 @@ export async function wordReport({ rxn, units, t, rd, lots }: ReportInput): Prom
   const scheme = await schemePng(rxn, rd);
   if (scheme) {
     b.push(p(t.preview, { style: 'Heading1' }));
-    b.push({ kind: 'image', png: scheme.png, width: scheme.width * 0.75, height: scheme.height * 0.75 });
+    const k = Math.min(0.75, 450 / scheme.width); // px → pt, fit the A4 text width
+    b.push({ kind: 'image', png: scheme.png, width: scheme.width * k, height: scheme.height * k });
   }
   if (rxn.conditions) b.push(p([{ text: `${t.conditions}：`, b: true }, { text: rxn.conditions }]));
 
