@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="170" viewBox="0 0 960 170">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 10 5 0 10z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <rect width="960" height="170" rx="16" fill="#ffffff" stroke="#e2e8f0"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', Helvetica, Arial, sans-serif" text-anchor="middle">
+    <!-- step: x centers 90, 246, 402, 558, 714, 870 -->
+    <g fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#a)">
+      <path d="M140 62h56"/><path d="M296 62h56"/><path d="M452 62h56"/><path d="M608 62h56"/><path d="M764 62h56"/>
+    </g>
+    <g fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="90" cy="62" r="34" fill="#dbeafe" stroke="#2563eb"/>
+      <g transform="translate(78 50)" stroke="#2563eb"><circle cx="6" cy="8" r="3"/><circle cx="6" cy="17" r="2"/><path d="M11 12h8m-3-3 3 3-3 3"/></g>
+      <circle cx="246" cy="62" r="34" fill="#ccfbf1" stroke="#0d9488"/>
+      <g transform="translate(234 50)" stroke="#0d9488"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></g>
+      <circle cx="402" cy="62" r="34" fill="#ffedd5" stroke="#ea580c"/>
+      <g transform="translate(390 50)" stroke="#ea580c"><path d="M12 4v16M6 20h12M4 8h16"/><path d="M6 8l-3 6a3 3 0 0 0 6 0zM18 8l-3 6a3 3 0 0 0 6 0z"/></g>
+      <circle cx="558" cy="62" r="34" fill="#e0e7ff" stroke="#4f46e5"/>
+      <g transform="translate(546 50)" stroke="#4f46e5"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 12.5 9 5 9-5M3 17l9 5 9-5"/></g>
+      <circle cx="714" cy="62" r="34" fill="#fee2e2" stroke="#dc2626"/>
+      <g transform="translate(702 50)" stroke="#dc2626"><path d="M2 20h20"/><path d="M3 19c3 0 3-1 4-1s1 1 2 1 1-13 2-13 1 13 2 13 1-5 2-5 1 5 2 5 2-1 4 0"/></g>
+      <circle cx="870" cy="62" r="34" fill="#fce7f3" stroke="#be185d"/>
+      <g transform="translate(858 50)" stroke="#be185d"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 14h8M8 17h5"/></g>
+    </g>
+    <g font-size="15" font-weight="700" fill="#0f172a">
+      <text x="90" y="124">输入反应</text><text x="246" y="124">查询性质</text><text x="402" y="124">计算投料</text>
+      <text x="558" y="124">记录实验</text><text x="714" y="124">上传谱图</text><text x="870" y="124">导出报告</text>
+    </g>
+    <g font-size="12" fill="#64748b">
+      <text x="90" y="146">SMILES · 名称 · 画结构</text><text x="246" y="146">试剂库 · PubChem</text><text x="402" y="146">当量 ⇄ 质量 ⇄ 体积</text>
+      <text x="558" y="146">多次实验 · 实际投料</text><text x="714" y="146">Bruker · MNova · 节点图</text><text x="870" y="146">PDF · Word · Excel</text>
+    </g>
+  </g>
+</svg>
