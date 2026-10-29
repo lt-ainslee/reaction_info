@@ -5,7 +5,7 @@ import type { MainModule } from '@rdkit/rdkit';
 import { autoAbbr, entryFor } from '../chem/abbr';
 import type { Component } from '../chem/stoich';
 import { useI18n } from '../i18n';
-import { assignAbbr, useAbbrs } from '../storage/abbrs';
+import { AbbrTakenError, assignAbbr, useAbbrs } from '../storage/abbrs';
 
 interface Props {
   c: Component;
@@ -31,8 +31,8 @@ export function AbbrField({ c, rd, onUpdate, onNotify, onOpenAbbrs }: Props) {
       // From now on it follows the table.
       onUpdate({ abbr: undefined });
       onNotify(A.saved.replace('{a}', typed).replace('{name}', c.name));
-    } catch {
-      onNotify(t.saveFailed);
+    } catch (e) {
+      onNotify(e instanceof AbbrTakenError ? A.taken.replace('{a}', e.abbr) : t.saveFailed);
     }
   };
 

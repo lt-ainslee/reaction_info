@@ -115,6 +115,20 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       )`,
     ],
   },
+  {
+    version: 7,
+    sql: [
+      // One live entry per abbreviation: keep the most recently updated of any
+      // duplicates (possible before this check existed), then enforce it.
+      `UPDATE abbreviations SET deleted_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+        WHERE deleted_at IS NULL AND EXISTS (
+          SELECT 1 FROM abbreviations b
+          WHERE b.abbr = abbreviations.abbr AND b.deleted_at IS NULL AND b.id != abbreviations.id
+            AND (b.updated_at > abbreviations.updated_at OR (b.updated_at = abbreviations.updated_at AND b.id > abbreviations.id))
+        )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_abbr_live ON abbreviations (abbr) WHERE deleted_at IS NULL`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

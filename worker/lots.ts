@@ -4,7 +4,7 @@
 //   PUT    /api/lots/:id      replace ({ lot })
 //   DELETE /api/lots/:id      soft delete
 import { normalizeLot, type ReagentLot } from '../src/chem/lots';
-import { error, json, userOf, type Env } from './http';
+import { error, json, readRecord, userOf, type Env } from './http';
 
 const LOT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -35,15 +35,8 @@ const SELECT = `SELECT l.id, l.data, l.created_at, l.updated_at,
   FROM reagent_lots l`;
 
 async function readLot(req: Request, id?: string): Promise<ReagentLot | Response> {
-  let body: Record<string, unknown>;
-  try {
-    body = (await req.json()) as Record<string, unknown>;
-  } catch {
-    return error(400, 'bad_json');
-  }
-  const raw = body?.lot as Record<string, unknown> | undefined;
-  const lot = normalizeLot(raw && { ...raw, id: id ?? raw.id ?? crypto.randomUUID() });
-  return lot ?? error(422, 'invalid_lot');
+  const r = await readRecord(req, 'lot', normalizeLot, id);
+  return r instanceof Response ? r : r.record;
 }
 
 export async function handleLots(req: Request, env: Env, path: string): Promise<Response | null> {
