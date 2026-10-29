@@ -12,5 +12,7 @@
     "isolatedModules": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["./**/*.ts", "../src/chem/stoich.ts", "../src/storage/schema.ts", "../src/storage/ids.ts"]
+  "include": ["./**/*.ts", "../src/chem/stoich.ts", "../src/storage/schema.ts", "../src/storage/ids.ts"],
+  // Tests run in Node (see test/tsconfig.json).
+  "exclude": ["test"]
 }

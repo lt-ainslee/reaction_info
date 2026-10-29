@@ -9,7 +9,7 @@
     "build": "tsc -b && tsc -p worker/tsconfig.json && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc -b && tsc -p worker/tsconfig.json",
+    "typecheck": "tsc -b && tsc -p worker/tsconfig.json && tsc -p worker/test/tsconfig.json",
     "lint": "eslint .",
     "deploy": "npm run build && wrangler deploy",
     "dev:worker": "npm run build && wrangler dev"
