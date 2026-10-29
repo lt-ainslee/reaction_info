@@ -1,4 +1,5 @@
 // Client for the attachment API (worker/attachments.ts).
+import { api as call } from '../storage/http';
 
 export type Kind = 'nmr' | 'mnova' | 'jcamp' | 'ms' | 'hplc' | 'ir' | 'xrd' | 'cif' | 'pdf' | 'image' | 'text' | 'sample' | 'other';
 export type NodeType = 'sample' | 'source' | 'processed' | 'export' | 'peaklist' | 'other';
@@ -52,14 +53,6 @@ export interface UploadMeta {
 
 export const fileUrl = (id: string, download = false) => `/api/attachments/${encodeURIComponent(id)}/file${download ? '?download' : ''}`;
 export const previewUrl = (id: string) => `/api/attachments/${encodeURIComponent(id)}/preview`;
-
-async function call<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, credentials: 'same-origin' });
-  if (res.status === 204) return undefined as T;
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error((body as { error?: string } | null)?.error ?? `HTTP ${res.status}`);
-  return body as T;
-}
 
 /**
  * Attachments belong to an owner: a reaction id, or "lot:<lot id>" for a

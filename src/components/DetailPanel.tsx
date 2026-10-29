@@ -6,7 +6,7 @@ import { GHS } from '../chem/ghs';
 import { parseInputText } from '../chem/parseInput';
 import { isValidSmiles, smilesInfo, smilesToSvg } from '../chem/rdkit';
 import type { Component } from '../chem/stoich';
-import type { OpenEditor } from '../App';
+import type { OpenEditor } from '../app/editor';
 import { useI18n } from '../i18n';
 import { AbbrField } from './AbbrField';
 import { LotEditor } from './LotEditor';

@@ -1,28 +1,10 @@
 // Saved reactions on the server (Worker + D1, see worker/index.ts).
 import type { Reaction } from '../chem/stoich';
 import { normalizeReaction } from './schema';
+import { api as call, HttpError } from './http';
 import { ConflictError, NotFoundError, type ReactionRepo, type SavedReaction, type SavedSummary } from './types';
 
 const BASE = '/api/reactions';
-
-class HttpError extends Error {
-  constructor(readonly status: number, readonly body: Record<string, unknown> | null) {
-    super(`HTTP ${status}`);
-    this.name = 'HttpError';
-  }
-}
-
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-    credentials: 'same-origin',
-  });
-  if (res.status === 204) return undefined as T;
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new HttpError(res.status, body);
-  return body as T;
-}
 
 /** Validate server data with the same rules as local data. */
 function toSaved(x: SavedReaction): SavedReaction {

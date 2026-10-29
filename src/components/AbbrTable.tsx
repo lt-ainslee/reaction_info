@@ -8,7 +8,7 @@ import { smilesToSvg } from '../chem/rdkit';
 import { resolveOne, type CompoundData } from '../chem/resolve';
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
-import { assignAbbr, removeAbbr, saveAbbr, useAbbrs } from '../storage/abbrs';
+import { AbbrTakenError, assignAbbr, removeAbbr, saveAbbr, useAbbrs } from '../storage/abbrs';
 
 interface Props {
   rd: MainModule | null;
@@ -64,8 +64,8 @@ export function AbbrTable({ rd, rxn, onClose, onNotify }: Props) {
       setQuery('');
       setFound(null);
       setAdding(false);
-    } catch {
-      onNotify(t.saveFailed);
+    } catch (e) {
+      onNotify(e instanceof AbbrTakenError ? A.taken.replace('{a}', e.abbr) : t.saveFailed);
     }
   };
 
@@ -74,8 +74,8 @@ export function AbbrTable({ rd, rxn, onClose, onNotify }: Props) {
     if (!a || a === e.abbr) return;
     try {
       await assignAbbr(rd, e, a, ask(a), e);
-    } catch {
-      onNotify(t.saveFailed);
+    } catch (e) {
+      onNotify(e instanceof AbbrTakenError ? A.taken.replace('{a}', e.abbr) : t.saveFailed);
     }
   };
 

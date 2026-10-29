@@ -4,7 +4,7 @@ import { entryToData } from '../chem/abbr';
 import { libraryToComponent } from '../chem/library';
 import { available, lotLabel, lotSearchText, type ReagentLot } from '../chem/lots';
 import { hitToData, resolveOne, searchAll, smilesToData, type CompoundData, type SearchResults } from '../chem/resolve';
-import type { OpenEditor } from '../App';
+import type { OpenEditor } from '../app/editor';
 import { formulaMass } from '../chem/formula';
 import type { Role } from '../chem/stoich';
 import { useI18n } from '../i18n';

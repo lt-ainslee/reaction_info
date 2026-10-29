@@ -16,6 +16,7 @@ import { lotLabel, lotOwner, type ReagentLot, type Verification } from '../chem/
 import { activeRun, runsOf } from '../chem/runs';
 import { updateComponent, type Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
+import { saveToInventory } from '../storage/inventory';
 import { lotRepo } from '../storage/lots';
 import type { VNode } from './AttachmentGraph';
 import { AttachmentViewer } from './AttachmentViewer';
@@ -382,7 +383,8 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
     const lib = library.get(lotId);
     if (!lib) return;
     guard(async () => {
-      const saved = await lotRepo.save({ ...lib, verification, verificationNote });
+      // Through the inventory so its window shows the new identity check too.
+      const saved = await saveToInventory({ ...lib, verification, verificationNote });
       setLibrary((m) => new Map(m).set(lotId, { ...saved, attachments: lib.attachments }));
       setRxn((r) => ({
         ...r,
