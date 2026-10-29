@@ -28,9 +28,15 @@ interface Props {
 
 export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, currentReactionId, onShowSpectra, onOpenInventory, onOpenAbbrs }: Props) {
   const { t, lang } = useI18n();
-  const [details, setDetails] = useState<PubChemDetails | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
+  // PubChem record of the compound's CID, tagged with it: a new CID shows nothing until its record arrives.
+  const [fetched, setFetched] = useState<{ cid: number; details: PubChemDetails | null } | null>(null);
+  // Looking up a CID for a compound without one.
+  const [searching, setSearching] = useState(false);
+  const [searchFailed, setSearchFailed] = useState(false);
+  const current = c.cid && fetched?.cid === c.cid ? fetched : null;
+  const details = current?.details ?? null;
+  const loading = searching || (!!c.cid && !current);
+  const error = searchFailed || (!!current && !current.details);
   const [structure, setStructure] = useState(c.smiles ?? '');
   const [structMsg, setStructMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -67,19 +73,16 @@ export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, cu
   };
 
   useEffect(() => {
-    setDetails(null);
-    setError(false);
-    if (!c.cid) return;
+    const cid = c.cid;
+    if (!cid) return;
     let cancelled = false;
-    setLoading(true);
-    getDetailsCached(c.cid)
+    getDetailsCached(cid)
       .then((d) => {
         if (cancelled) return;
-        setDetails(d);
+        setFetched({ cid, details: d });
         if (!c.cas && d.cas) onUpdate({ cas: d.cas });
       })
-      .catch(() => !cancelled && setError(true))
-      .finally(() => !cancelled && setLoading(false));
+      .catch(() => !cancelled && setFetched({ cid, details: null }));
     return () => {
       cancelled = true;
     };
@@ -87,15 +90,16 @@ export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, cu
   }, [c.cid]);
 
   const lookup = async () => {
-    setLoading(true);
-    setError(false);
+    setSearching(true);
+    setSearchFailed(false);
     try {
       const hits = c.smiles ? await searchBySmiles(c.smiles) : await searchByName(c.cas ?? c.name);
+      // With a CID, the record is fetched by the effect above.
       if (hits[0]) onUpdate({ cid: hits[0].cid, formula: c.formula ?? hits[0].formula, mw: c.mw ?? hits[0].mw, smiles: c.smiles ?? hits[0].smiles });
-      else setLoading(false);
     } catch {
-      setError(true);
-      setLoading(false);
+      setSearchFailed(true);
+    } finally {
+      setSearching(false);
     }
   };
 

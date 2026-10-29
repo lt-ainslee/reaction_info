@@ -138,6 +138,7 @@ export default function App() {
 
         {hasComponents && (
           <Attachments
+            key={savedId ?? 'unsaved'}
             rxn={rxn}
             setRxn={setRxn}
             reactionId={savedId}

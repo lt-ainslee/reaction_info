@@ -20,12 +20,6 @@ export default defineConfig(
     files: ['src/**/*.{ts,tsx}'],
     languageOptions: { globals: globals.browser },
     extends: [reactHooks.configs.flat.recommended],
-    rules: {
-      // Existing effects reset state / load data when a prop changes (Attachments,
-      // DetailPanel, NodeInspector). Reported, not failing, until those components
-      // are restructured.
-      'react-hooks/set-state-in-effect': 'warn',
-    },
   },
   {
     files: ['worker/**/*.ts'],
