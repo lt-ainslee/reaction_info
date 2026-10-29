@@ -34,15 +34,23 @@ export function isValidSmiles(rd: MainModule, smiles: string): boolean {
   return true;
 }
 
-/** Canonical SMILES (null when RDKit can't read it). */
+const canonical = new Map<string, string | null>();
+
+/** Canonical SMILES (null when RDKit can't read it). Cached: compounds are matched on every edit. */
 export function canonicalSmiles(rd: MainModule, smiles: string): string | null {
+  if (canonical.has(smiles)) return canonical.get(smiles)!;
   const mol = rd.get_mol(smiles);
-  if (!mol) return null;
-  try {
-    return mol.get_smiles();
-  } finally {
-    mol.delete();
+  let out: string | null = null;
+  if (mol) {
+    try {
+      out = mol.get_smiles();
+    } finally {
+      mol.delete();
+    }
   }
+  if (canonical.size >= 2000) canonical.delete(canonical.keys().next().value!);
+  canonical.set(smiles, out);
+  return out;
 }
 
 export function smilesToSvg(rd: MainModule, smiles: string, width = 180, height = 130): string | null {

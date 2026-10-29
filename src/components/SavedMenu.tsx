@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { pendingLocalUploads, reactionFromFile, repo, uploadLocalReactions, type SavedSummary } from '../storage';
-import { saveBlob } from '../attachments/pack';
+import { saveBlob } from '../export';
 import { exportAll, restore } from '../storage/backup';
 
 interface Props {

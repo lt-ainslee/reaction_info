@@ -7,9 +7,10 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type Dispatch
 import { createNode, deleteAttachment, linkNodes, savePositions, unlinkNodes, updateAttachment, type Attachment } from '../attachments/api';
 import { siPrefix, type NmrMeta, type PickedFile } from '../attachments/bruker';
 import { compoundOf, displayName, nodeTypeOf, relationFor, subtree, wouldCycle } from '../attachments/graph';
-import { packNodes, saveBlob } from '../attachments/pack';
 import { fromDrop, fromInput } from '../attachments/picked';
-import { addPeakList, uploadPicked, type Progress } from '../attachments/uploader';
+// Uploading (folders are zipped) and packing load on first use.
+import type { Progress } from '../attachments/uploader';
+import { saveBlob } from '../export';
 import { lotOwner, type Verification } from '../chem/lots';
 import { activeRun, runsOf } from '../chem/runs';
 import { updateComponent, type Reaction } from '../chem/stoich';
@@ -17,13 +18,13 @@ import { useI18n } from '../i18n';
 import { saveToInventory } from '../storage/inventory';
 import type { VNode } from './AttachmentGraph';
 import { AttachmentList } from './AttachmentList';
-import { AttachmentViewer } from './AttachmentViewer';
 import { Characterization } from './Characterization';
 import { NodeInspector, nucleusLabel, type NodeActions } from './NodeInspector';
 import { CMP, LOT, useAttachmentGraph } from './useAttachmentGraph';
 import { CompoundInspector, LotInspector } from './VirtualInspector';
 
 const AttachmentGraph = lazy(() => import('./AttachmentGraph'));
+const AttachmentViewer = lazy(() => import('./AttachmentViewer').then((m) => ({ default: m.AttachmentViewer })));
 
 interface Props {
   rxn: Reaction;
@@ -156,6 +157,7 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
   const upload = async (picked: PickedFile[], to: Target | null) => {
     if (!to || !picked.length) return;
     try {
+      const { uploadPicked } = await import('../attachments/uploader');
       const { count, autoLinked } = await uploadPicked(picked, {
         reactionId: to.owner,
         runId: to.owner === reactionId ? run.id : undefined,
@@ -294,6 +296,7 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
     addPeakList: (parent) =>
       guard(async () => {
         const nuc = nucleusLabel(parent);
+        const { addPeakList } = await import('../attachments/uploader');
         const n = await addPeakList(parent.reactionId, parent.id, t.att.peakListLabel.replace('{nuc}', nuc).trim());
         await refresh();
         setSelectedId(n.id);
@@ -302,6 +305,7 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
       setPacking(true);
       try {
         const ids = subtree(ixAll, n.id);
+        const { packNodes } = await import('../attachments/pack');
         const blob = await packNodes(ids.map((id) => ixAll.byId.get(id)!).filter(Boolean));
         saveBlob(blob, `${displayName(n).replace(/\.[^.]*$/, '').replace(/[\\/:*?"<>|]/g, '_')}.zip`);
       } catch (e) {
@@ -500,7 +504,11 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
         />
       )}
 
-      {viewing && <AttachmentViewer att={viewing} onClose={() => setViewing(null)} />}
+      {viewing && (
+        <Suspense fallback={null}>
+          <AttachmentViewer att={viewing} onClose={() => setViewing(null)} />
+        </Suspense>
+      )}
     </section>
   );
 }

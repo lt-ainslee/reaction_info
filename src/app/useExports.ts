@@ -1,7 +1,7 @@
 // Word / Excel reports and scheme pictures / files of the current reaction.
 import type { MainModule } from '@rdkit/rdkit';
 import { useState } from 'react';
-import { saveBlob } from '../attachments/pack';
+import { saveBlob } from '../export';
 import { activeRun, runCode, runsOf } from '../chem/runs';
 import type { ReportLook, SchemeLabels } from '../chem/scheme';
 import type { Reaction } from '../chem/stoich';
