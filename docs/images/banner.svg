@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="220" viewBox="0 0 960 220">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e3a8a"/>
+      <stop offset="0.55" stop-color="#1f6feb"/>
+      <stop offset="1" stop-color="#0ea5e9"/>
+    </linearGradient>
+    <g id="hex" fill="none" stroke="#ffffff" stroke-width="2">
+      <path d="M0-30 26-15v30L0 30-26 15v-30z"/>
+      <path d="M0-21 18-10.5M18 10.5 0 21M-18 10.5V-10.5"/>
+    </g>
+  </defs>
+  <rect width="960" height="220" rx="20" fill="url(#bg)"/>
+  <!-- decorative molecules -->
+  <g opacity="0.16">
+    <use href="#hex" x="700" y="70"/>
+    <use href="#hex" x="752" y="100"/>
+    <path d="M778 85l26-15m0 0v-24" stroke="#fff" stroke-width="2" fill="none"/>
+    <use href="#hex" x="860" y="150"/>
+    <path d="M834 165l-26 15m86-45 26-15" stroke="#fff" stroke-width="2" fill="none"/>
+    <use href="#hex" x="640" y="175"/>
+  </g>
+  <!-- logo -->
+  <g transform="translate(56 58)">
+    <rect width="104" height="104" rx="24" fill="#ffffff" fill-opacity="0.16" stroke="#ffffff" stroke-opacity="0.45"/>
+    <path d="M38 22h28M45 22v26L26 82a6 6 0 0 0 5.5 9h41a6 6 0 0 0 5.5-9L59 48V22" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M33 72h38l6 11a3 3 0 0 1-2.6 4.5H29.6A3 3 0 0 1 27 83z" fill="#fff" fill-opacity="0.85"/>
+  </g>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', Helvetica, Arial, sans-serif" fill="#ffffff">
+    <text x="190" y="98" font-size="44" font-weight="700">reaction_info</text>
+    <text x="192" y="138" font-size="22" font-weight="600" fill-opacity="0.95">反应投料计算 · 课题组电子实验记录</text>
+    <text x="192" y="170" font-size="15" fill-opacity="0.8">Reaction scheme · Stoichiometry · Runs · Inventory · Spectra · Reports</text>
+  </g>
+</svg>
