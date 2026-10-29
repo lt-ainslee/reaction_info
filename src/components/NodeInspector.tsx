@@ -1,5 +1,5 @@
 // Details and actions for one node of the attachment graph (used by the graph and list views).
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { fileUrl, formatSize, type Attachment } from '../attachments/api';
 import { prettyNucleus } from '../attachments/bruker';
 import { displayName, nodeTypeOf, type Index } from '../attachments/graph';
@@ -32,8 +32,8 @@ export function NodeInspector({ node, ix, products, compoundId, packing, actions
   const { t, lang } = useI18n();
   const type = nodeTypeOf(node);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Keyed by node and saved text (see Attachments), so this starts from the stored list.
   const [text, setText] = useState(String(node.meta.text ?? ''));
-  useEffect(() => setText(String(node.meta.text ?? '')), [node.id, node.meta.text]);
   const ups = ix.parents.get(node.id) ?? [];
   const downs = ix.children.get(node.id) ?? [];
   const nameOf = (id: string) => {

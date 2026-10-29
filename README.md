@@ -355,7 +355,7 @@ src/
     pubchem.ts         PubChem PUG REST / PUG View 客户端（带限速与缓存）
     ghs.ts             GHS 危险类别
     rdkit.ts           RDKit WASM 加载、结构绘制、由 SMILES 求分子式
-    scheme.ts          黑白（ChemDraw / ACS 1996）反应式排版，导出 SVG / PNG / CDXML / RXN
+    scheme.ts          反应式排版与绘制（ChemDraw 黑白 / ChemDraw 彩色 / 经典彩色），导出 SVG / PNG / CDXML / RXN
     resolve.ts         名称 / CAS / SMILES / InChI 解析，粘贴内容 → 化合物与角色
     parseInput.ts      输入格式识别：RXN、Molfile/SDF、InChI、反应 SMILES、名称
     cdxml.ts           CDXML 解析（暂未在界面中使用）
@@ -376,14 +376,20 @@ src/
     AbbrTable.tsx        缩写表
     References.tsx       参考文献（DOI 查询）
     ProcedureEditor.tsx  实验步骤富文本编辑器（Tiptap，懒加载）
-    Attachments.tsx      表征与谱图卡片（节点图 / 列表、上传、表征数据）
+    Attachments.tsx      表征与谱图卡片（节点图 / 列表、上传、连线、试剂批次鉴定）
+    useAttachmentGraph.ts  该卡片的数据：反应与试剂批次的节点图、只看当前实验、化合物 / 批次节点
+    AttachmentList.tsx   该卡片的列表视图
+    Characterization.tsx 产物的表征数据（SI 格式）
     AttachmentGraph.tsx  节点图（React Flow + dagre，懒加载）
     NodeInspector.tsx    节点详情面板
     SpectrumView.tsx     一维谱查看器
-    Report.tsx           PDF 报告（A4 预览 + 打印样式）
+    Report.tsx           PDF 报告（A4 预览 + 打印样式）：工具栏与版面
+    ReportSections.tsx   报告各部分（反应式、投料表、试剂批次、产物、步骤、附件、文献、安全信息）
+    useReportData.ts     报告需要的数据（试剂库、附件树、GHS 安全信息）
   procedure/           步骤文档：JSON ↔ 纯文本 / 安全 HTML（doc.ts）、化学自动格式规则（chemText.ts、ChemTypography.ts）
   attachments/         Bruker 数据解析（bruker.ts）、zip、绘图、附件接口客户端；
-                       graph.ts 节点关系（纯函数）、uploader.ts 上传与自动连线、pack.ts 打包下载
+                       graph.ts 节点关系（纯函数）、uploader.ts 上传与自动连线、pack.ts 打包下载、
+                       picked.ts 选择 / 拖入的文件与文件夹
   inventory/
     importTable.ts     Excel / CSV 库存表解析与表头识别
   office/              Word (.docx) / Excel (.xlsx) 导出（手写 OOXML，按需加载）
