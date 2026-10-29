@@ -86,7 +86,7 @@ export default function App() {
   const [abbrsOpen, setAbbrsOpen] = useState(false);
   const abbrTable = useAbbrs();
   // The reaction with every compound's effective abbreviation, for drawing.
-  const shown = useMemo(() => withAbbrs(rd, rxn), [rd, rxn, abbrTable]);
+  const shown = useMemo(() => withAbbrs(rd, rxn, abbrTable ?? []), [rd, rxn, abbrTable]);
   const abbrMap = useMemo(() => new Map(shown.components.filter((c) => c.abbr).map((c) => [c.id, c.abbr!])), [shown]);
   /** Graph node to reveal in the attachments card (e.g. a lot from the side panel). */
   const [focusNode, setFocusNode] = useState<string | null>(null);

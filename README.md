@@ -308,9 +308,12 @@ npm install          # postinstall 会把 RDKit WASM 复制到 public/rdkit/
 npm run dev          # 前端开发服务器 http://localhost:5173（使用浏览器本地存储）
 npm test             # 单元测试（计算引擎、分子式解析、试剂库校验等）
 npm run typecheck    # 前端与 Worker 类型检查
+npm run lint         # ESLint（TypeScript 与 React hooks 规则）
 npm run build        # 输出到 dist/
 npm run dev:worker   # 构建后用本地模拟的 D1 运行 Worker：http://127.0.0.1:8787
 ```
+
+每个 PR 和推送到 `main` 时，GitHub Actions（`.github/workflows/ci.yml`）会依次运行类型检查、ESLint、单元测试和构建，任何一步失败都会在 PR 上标红。
 
 ## 部署到 Cloudflare
 

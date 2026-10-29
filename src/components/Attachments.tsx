@@ -224,7 +224,7 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
       }
     }
     return out;
-  }, [rxn.components, nodes, ix, reactionId, library, t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rxn.components, nodes, ix, reactionId, library, t]);
 
   // Reveal a node asked for from outside (e.g. "identity spectra" in the side panel).
   useEffect(() => {
@@ -480,7 +480,7 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
     }
     for (const n of nodes) if (isRoot(ix, n.id)) visit(n.id, 0);
     return out;
-  }, [virtual, ix, nodes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [virtual, ix, nodes]);
 
   const selectedAtt = selectedId ? ixAll.byId.get(selectedId) : undefined;
   const selectedV = selectedId ? virtual.find((v) => v.id === selectedId) : undefined;

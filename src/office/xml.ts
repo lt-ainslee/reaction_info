@@ -4,6 +4,7 @@ import { strToU8, zipSync, type Zippable } from 'fflate';
 const ESC: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
 /** Escape text for XML, dropping characters XML 1.0 can't hold. */
 export const x = (s: string) =>
+  // eslint-disable-next-line no-control-regex -- characters XML 1.0 forbids
   s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, '').replace(/[&<>"']/g, (c) => ESC[c]);
 
 export const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
