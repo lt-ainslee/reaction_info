@@ -90,9 +90,8 @@ function Mol({ c, rd, text, onClick }: { c: Component; rd: MainModule | null; te
 /** The exported SVG itself (what you see is what you download); click a compound to select it. */
 function MonoScheme({ rxn, rd, rdError, labels, onSelect }: Omit<Props, 'look'>) {
   const { t } = useI18n();
-  // Redraw only when something drawn changes, not on every amount edit.
-  const key = JSON.stringify([rxn.conditions, rxn.components.map((c) => [c.id, c.role, c.name, c.abbr, c.smiles, c.formula, c.role === 'catalyst' && c.equiv])]);
-  const out = useMemo(() => schemeSvg(rd, rxn, { interactive: true, labels }), [rd, key, labels]);
+  // Cheap on amount edits: structure drawings are cached by SMILES (scheme.ts).
+  const out = useMemo(() => schemeSvg(rd, rxn, { interactive: true, labels }), [rd, rxn, labels]);
   return (
     <div className="rx-wrap">
       {!rd && !rdError && <p className="muted small">{t.rdkitLoading}</p>}

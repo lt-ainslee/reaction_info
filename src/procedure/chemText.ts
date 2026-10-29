@@ -65,4 +65,4 @@ export const SYMBOL_RULES: [RegExp, (m: RegExpMatchArray) => string][] = [
 ];
 
 /** "[M+H]+", "[M+Na]+" — the trailing charge typed after "]" becomes a superscript. */
-export const CHARGE_FIND = /\[M[+\-−][A-Za-z0-9]{1,6}\]([+\-])$/;
+export const CHARGE_FIND = /\[M[-+−][A-Za-z0-9]{1,6}\]([-+])$/;

@@ -48,7 +48,7 @@ export function mapHeaders(header: string[]): (Field | null)[] {
 
 /** CSV / TSV (quotes, embedded newlines, BOM). */
 export function parseCsv(text: string): string[][] {
-  const src = text.replace(/^﻿/, '');
+  const src = text.replace(/^\uFEFF/, ''); // BOM
   const first = src.split('\n', 1)[0];
   const sep = (first.match(/\t/g)?.length ?? 0) > (first.match(/,/g)?.length ?? 0) ? '\t' : first.includes(';') && !first.includes(',') ? ';' : ',';
   const rows: string[][] = [];
@@ -58,12 +58,16 @@ export function parseCsv(text: string): string[][] {
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
     if (quoted) {
-      if (ch === '"' && src[i + 1] === '"') (cell += '"'), i++;
-      else if (ch === '"') quoted = false;
+      if (ch === '"' && src[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
       else cell += ch;
     } else if (ch === '"' && !cell) quoted = true;
-    else if (ch === sep) row.push(cell), (cell = '');
-    else if (ch === '\n' || ch === '\r') {
+    else if (ch === sep) {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n' || ch === '\r') {
       if (ch === '\r' && src[i + 1] === '\n') i++;
       row.push(cell);
       rows.push(row);

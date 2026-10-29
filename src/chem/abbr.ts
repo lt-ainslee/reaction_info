@@ -57,8 +57,8 @@ export function entryByAbbr(text: string, list = table): AbbrEntry | undefined {
 }
 
 /** Abbreviation the table / library gives a compound (ignoring its own `abbr`). */
-export function autoAbbr(rd: MainModule | null, c: Ident): string | undefined {
-  const e = entryFor(rd, c);
+export function autoAbbr(rd: MainModule | null, c: Ident, list = table): string | undefined {
+  const e = entryFor(rd, c, list);
   if (e) return e.abbr;
   const lib = (c.cas && LIBRARY.find((x) => x.cas === c.cas)) || (rd && c.smiles ? libraryBySmiles(rd, c.smiles) : undefined);
   const b = lib ? builtinAbbr(lib) : undefined;
@@ -67,14 +67,14 @@ export function autoAbbr(rd: MainModule | null, c: Ident): string | undefined {
 }
 
 /** The abbreviation shown for a component, or undefined. */
-export function abbrOf(rd: MainModule | null, c: Component): string | undefined {
+export function abbrOf(rd: MainModule | null, c: Component, list = table): string | undefined {
   if (c.abbr !== undefined) return c.abbr || undefined;
-  return autoAbbr(rd, c);
+  return autoAbbr(rd, c, list);
 }
 
 /** Every component with its effective abbreviation filled in ('' = none), for drawing and reports. */
-export function withAbbrs(rd: MainModule | null, rxn: Reaction): Reaction {
-  return { ...rxn, components: rxn.components.map((c) => ({ ...c, abbr: abbrOf(rd, c) ?? '' })) };
+export function withAbbrs(rd: MainModule | null, rxn: Reaction, list = table): Reaction {
+  return { ...rxn, components: rxn.components.map((c) => ({ ...c, abbr: abbrOf(rd, c, list) ?? '' })) };
 }
 
 /** "Tetrahydrofuran (THF)"; just the name when there is no (different) abbreviation. */

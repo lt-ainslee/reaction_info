@@ -2,7 +2,7 @@
 // as PDF" uses the browser's print dialog, which keeps text as vector text and
 // renders Chinese with the system fonts (no font embedding needed).
 import type { MainModule } from '@rdkit/rdkit';
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { formatSize, getGraph } from '../attachments/api';
 import { isEmptyDoc, procedureOf, toHtml } from '../procedure/doc';
@@ -11,8 +11,8 @@ import { GHS } from '../chem/ghs';
 import { NmrMetaLine } from './NmrMetaLine';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { withAbbrs } from '../chem/abbr';
-import { schemeSvg, unitsToPt, type SchemeLabels } from '../chem/scheme';
-import type { SchemeLook } from './ReactionPreview';
+import { smilesToSvg } from '../chem/rdkit';
+import { REPORT_LOOKS, schemeSvg, unitsToPt, type ReportLook, type SchemeLabels } from '../chem/scheme';
 import { findCid } from '../chem/resolve';
 import type { ReagentLot } from '../chem/lots';
 import { doiUrl, formatReference } from '../chem/refs';
@@ -29,8 +29,8 @@ interface Props {
   /** Scheme text: abbreviations or full names. */
   labels?: SchemeLabels;
   /** Scheme style (shared with the Word export). */
-  look: SchemeLook;
-  onLook: (v: SchemeLook) => void;
+  look: ReportLook;
+  onLook: (v: ReportLook) => void;
   /** Export the same report as Word. */
   onWord?: () => void;
   wordBusy?: boolean;
@@ -178,9 +178,9 @@ export default function Report({ rxn, units, rd, labels, look, onLook, onWord, w
         {withScheme && (
           <div className="seg" role="group" aria-label={t.report.schemeStyle} title={t.report.schemeStyleTip}>
             <span className="seg-label">{t.report.schemeStyle}</span>
-            {(['mono', 'color'] as const).map((v) => (
-              <button key={v} className={look === v ? 'on' : ''} aria-pressed={look === v} onClick={() => onLook(v)}>
-                {t.scheme.looks[v]}
+            {REPORT_LOOKS.map((v) => (
+              <button key={v} className={look === v ? 'on' : ''} aria-pressed={look === v} title={t.report.lookTips[v]} onClick={() => onLook(v)}>
+                {t.report.looks[v]}
               </button>
             ))}
           </div>
@@ -224,7 +224,11 @@ export default function Report({ rxn, units, rd, labels, look, onLook, onWord, w
           {withScheme && (
             <section>
               <h2>{t.preview}</h2>
-              <Scheme rxn={shown} rd={rd} labels={labels} color={look === 'color'} />
+              {look === 'color' ? (
+                <ColorScheme rxn={shown} rd={rd} labels={labels} />
+              ) : (
+                <Scheme rxn={shown} rd={rd} labels={labels} color={look === 'cdcolor'} />
+              )}
               {rxn.conditions && (
                 <p className="rp-cond">
                   <span>{t.conditions}</span>
@@ -511,5 +515,46 @@ function Scheme({ rxn, rd, labels, color }: { rxn: Reaction; rd: MainModule | nu
     <div className="rp-scheme">
       <img alt="" style={{ width: `${unitsToPt(out.width)}pt` }} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(out.svg)} />
     </div>
+  );
+}
+
+/** The original coloured layout: one RDKit drawing per compound, text over / under a CSS arrow. */
+function ColorScheme({ rxn, rd, labels }: { rxn: Reaction; rd: MainModule | null; labels?: SchemeLabels }) {
+  const text = (c: Component) => (labels !== 'name' && c.abbr) || c.name;
+  const side = (list: Component[]) =>
+    list.map((c, i) => (
+      <Fragment key={c.id}>
+        {i > 0 && <span className="rpc-plus">+</span>}
+        <ColorMol c={c} rd={rd} text={text(c)} />
+      </Fragment>
+    ));
+  const above = rxn.components.filter((c) => c.role === 'reagent' || c.role === 'catalyst');
+  const below = rxn.components.filter((c) => c.role === 'solvent');
+  return (
+    <div className="rpc-scheme">
+      <div className="rpc-side">{side(rxn.components.filter((c) => c.role === 'reactant'))}</div>
+      <div className="rpc-arrow">
+        <div className="rpc-agents">
+          {above.map((c) => (c.role === 'catalyst' ? `${text(c)} (${fmt(c.equiv * 100, 3)} mol%)` : text(c))).join(', ')}
+        </div>
+        <div className="rpc-line" />
+        <div className="rpc-agents">{below.map(text).join(', ')}</div>
+      </div>
+      <div className="rpc-side">{side(rxn.components.filter((c) => c.role === 'product'))}</div>
+    </div>
+  );
+}
+
+function ColorMol({ c, rd, text }: { c: Component; rd: MainModule | null; text: string }) {
+  const svg = useMemo(() => (rd && c.smiles ? smilesToSvg(rd, c.smiles, 200, 145) : null), [rd, c.smiles]);
+  return (
+    <figure className="rpc-mol">
+      {svg ? (
+        <img alt={c.name} src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} />
+      ) : (
+        <span className="rpc-mol-text">{c.formula ?? c.name}</span>
+      )}
+      <figcaption>{text}</figcaption>
+    </figure>
   );
 }

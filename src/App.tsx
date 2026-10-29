@@ -20,7 +20,7 @@ import { ReactionInput, type ApplyMode } from './components/ReactionInput';
 import { ReactionPreview, type SchemeLook } from './components/ReactionPreview';
 import { AbbrTable } from './components/AbbrTable';
 import { withAbbrs } from './chem/abbr';
-import type { SchemeLabels } from './chem/scheme';
+import { REPORT_LOOKS, type ReportLook, type SchemeLabels } from './chem/scheme';
 import { useAbbrs } from './storage/abbrs';
 import { References } from './components/References';
 import { RunBar } from './components/RunBar';
@@ -82,11 +82,11 @@ export default function App() {
   const [look, setLook] = useState<SchemeLook>(() => loadPref('schemeLook', ['color', 'mono'] as const));
   const [labels, setLabels] = useState<SchemeLabels>(() => loadPref('schemeLabels', ['abbr', 'name'] as const));
   // Scheme style in the PDF / Word reports (chosen in the report dialog).
-  const [reportLook, setReportLook] = useState<SchemeLook>(() => loadPref('reportLook', ['mono', 'color'] as const));
+  const [reportLook, setReportLook] = useState<ReportLook>(() => loadPref('reportLook', REPORT_LOOKS));
   const [abbrsOpen, setAbbrsOpen] = useState(false);
   const abbrTable = useAbbrs();
   // The reaction with every compound's effective abbreviation, for drawing.
-  const shown = useMemo(() => withAbbrs(rd, rxn), [rd, rxn, abbrTable]);
+  const shown = useMemo(() => withAbbrs(rd, rxn, abbrTable ?? []), [rd, rxn, abbrTable]);
   const abbrMap = useMemo(() => new Map(shown.components.filter((c) => c.abbr).map((c) => [c.id, c.abbr!])), [shown]);
   /** Graph node to reveal in the attachments card (e.g. a lot from the side panel). */
   const [focusNode, setFocusNode] = useState<string | null>(null);
@@ -200,7 +200,7 @@ export default function App() {
       const [m, lib] = await Promise.all([import('./office/report'), lotRepo.list().catch(() => [])]);
       const used = new Set(runsOf(rxn).flatMap((r) => r.data.components.map((c) => c.lot?.lotId).filter(Boolean)));
       const lots = new Map(lib.filter((l) => used.has(l.id)).map((l) => [l.id, l]));
-      const input = { rxn: shown, units, t, rd, lots, labels, schemeColor: reportLook === 'color' };
+      const input = { rxn: shown, units, t, rd, lots, labels, look: reportLook };
       if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
       else saveBlob(m.excelWorkbook(input), `${fileBase}.xlsx`);
     } catch (e) {
@@ -437,7 +437,7 @@ export default function App() {
                     {t.exportMd}
                   </button>
                   <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
-                  <button disabled={building} title={`${t.office.word}\n${t.report.schemeStyle}: ${t.scheme.looks[reportLook]}`} onClick={() => exportOffice('word')}>Word</button>
+                  <button disabled={building} title={`${t.office.word}\n${t.report.schemeStyle}: ${t.report.looks[reportLook]}`} onClick={() => exportOffice('word')}>Word</button>
                   <button disabled={building} title={t.office.excel} onClick={() => exportOffice('excel')}>Excel</button>
                 </div>
                 {run.status === 'planned' && (

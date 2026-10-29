@@ -121,7 +121,7 @@
 </details>
 
 > [!TIP]
-> Word 报告和 PDF 报告中的反应式默认为黑白样式，可在「导出 PDF 报告」窗口的「反应式样式」中改为彩色（选择会记住，Word 报告同样适用；该窗口中也可直接导出 Word）。
+> Word 报告和 PDF 报告中的反应式默认为黑白样式，可在「导出 PDF 报告」窗口的「反应式样式」中选择：黑白（ChemDraw）、彩色（ChemDraw 排版，原子按元素着色）、彩色（原样式）。选择会记住，Word 报告同样适用；该窗口中也可直接导出 Word。
 
 ### <img src="docs/images/icons/abbr.svg" width="28" align="top" alt=""> 化合物：缩写与性质查询
 
@@ -308,9 +308,12 @@ npm install          # postinstall 会把 RDKit WASM 复制到 public/rdkit/
 npm run dev          # 前端开发服务器 http://localhost:5173（使用浏览器本地存储）
 npm test             # 单元测试（计算引擎、分子式解析、试剂库校验等）
 npm run typecheck    # 前端与 Worker 类型检查
+npm run lint         # ESLint（TypeScript 与 React hooks 规则）
 npm run build        # 输出到 dist/
 npm run dev:worker   # 构建后用本地模拟的 D1 运行 Worker：http://127.0.0.1:8787
 ```
+
+每个 PR 和推送到 `main` 时，GitHub Actions（`.github/workflows/ci.yml`）会依次运行类型检查、ESLint、单元测试和构建，任何一步失败都会在 PR 上标红。
 
 ## 部署到 Cloudflare
 

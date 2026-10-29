@@ -159,6 +159,13 @@ export interface SchemeLayout {
   below: { lines: Line[]; ys: number[] };
 }
 
+/**
+ * Scheme style in reports: ChemDraw layout in black and white or with atom
+ * colours, or the original layout (one coloured drawing per compound).
+ */
+export type ReportLook = 'mono' | 'cdcolor' | 'color';
+export const REPORT_LOOKS: readonly ReportLook[] = ['mono', 'cdcolor', 'color'];
+
 /** 'abbr': write a compound's abbreviation (`abbr`, when set) instead of its name. */
 export type SchemeLabels = 'abbr' | 'name';
 
@@ -241,8 +248,21 @@ const n2 = (v: number) => +v.toFixed(2);
 const BLACK: Record<number, number[]> = {};
 for (let z = 0; z <= 118; z++) BLACK[z] = [0, 0, 0];
 
+type MolSvg = { body: string; w: number; h: number };
+const molCache = new Map<string, MolSvg | null>();
+
 /** One structure in ACS proportions, black (default) or with RDKit's atom colours; `body` is the inner SVG markup. */
-export function monoMolSvg(rd: MainModule, smiles: string, color = false): { body: string; w: number; h: number } | null {
+export function monoMolSvg(rd: MainModule, smiles: string, color = false): MolSvg | null {
+  // Cached: the on-screen scheme is redrawn on every edit of the reaction.
+  const key = (color ? 'c:' : 'm:') + smiles;
+  if (molCache.has(key)) return molCache.get(key)!;
+  const out = drawMol(rd, smiles, color);
+  if (molCache.size >= 300) molCache.delete(molCache.keys().next().value!);
+  molCache.set(key, out);
+  return out;
+}
+
+function drawMol(rd: MainModule, smiles: string, color: boolean): MolSvg | null {
   const mol = rd.get_mol(smiles);
   if (!mol) return null;
   try {

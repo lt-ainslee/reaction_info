@@ -93,7 +93,12 @@ async function downstream(db: D1Database, rid: string, start: string): Promise<S
   const stack = [start];
   while (stack.length) {
     const n = stack.pop()!;
-    for (const m of next.get(n) ?? []) if (!seen.has(m)) (seen.add(m), stack.push(m));
+    for (const m of next.get(n) ?? []) {
+      if (!seen.has(m)) {
+        seen.add(m);
+        stack.push(m);
+      }
+    }
   }
   return seen;
 }
@@ -122,6 +127,7 @@ const getAtt = (db: D1Database, id: string) =>
   db.prepare(`SELECT ${COLS} FROM attachments WHERE id = ? AND deleted_at IS NULL`).bind(id).first<AttRow>();
 
 /** Keep file names safe for R2 keys and Content-Disposition, but readable (Chinese is fine). */
+// eslint-disable-next-line no-control-regex -- control characters are exactly what is removed
 const safeName = (s: string) => s.replace(/[\u0000-\u001f\\/:*?"<>|]+/g, '_').slice(0, 200) || 'file';
 
 function disposition(filename: string, inline: boolean) {

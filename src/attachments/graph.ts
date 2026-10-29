@@ -49,7 +49,12 @@ export function wouldCycle(ix: Index, from: string, to: string): boolean {
   while (stack.length) {
     const n = stack.pop()!;
     if (n === from) return true;
-    for (const c of ix.children.get(n) ?? []) if (!seen.has(c)) (seen.add(c), stack.push(c));
+    for (const c of ix.children.get(n) ?? []) {
+      if (!seen.has(c)) {
+        seen.add(c);
+        stack.push(c);
+      }
+    }
   }
   return false;
 }
@@ -59,7 +64,12 @@ export function subtree(ix: Index, id: string): string[] {
   const out = [id];
   const seen = new Set(out);
   for (let i = 0; i < out.length; i++) {
-    for (const c of ix.children.get(out[i]) ?? []) if (!seen.has(c)) (seen.add(c), out.push(c));
+    for (const c of ix.children.get(out[i]) ?? []) {
+      if (!seen.has(c)) {
+        seen.add(c);
+        out.push(c);
+      }
+    }
   }
   return out;
 }

@@ -120,7 +120,9 @@ export default function ProcedureEditor({ value, onChange, onNotify }: Procedure
   // The last document this editor emitted (or loaded), to tell our own updates from outside ones.
   const last = useRef<ProcDoc>(value);
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  });
 
   const editor = useEditor({
     extensions: [
