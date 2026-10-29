@@ -286,7 +286,7 @@
 | `PUT /api/reactions/:id` | 更新，需带 `baseVersion`；版本不一致返回 409 和服务器上的当前版本 |
 | `DELETE /api/reactions/:id` | 删除（软删除，数据库中可恢复） |
 | `GET /api/abbrs` | 缩写表 |
-| `POST /api/abbrs`、`PUT /api/abbrs/:id`、`DELETE /api/abbrs/:id` | 新增、修改、删除（软删除）缩写 |
+| `POST /api/abbrs`、`PUT /api/abbrs/:id`、`DELETE /api/abbrs/:id` | 新增、修改、删除（软删除）缩写；同一缩写只能对应一个化合物（冲突返回 409 `abbr_taken`），转给另一个化合物时带 `replaces` 在同一事务中删除旧条目 |
 | `GET`、`POST /api/lots`；`GET`、`PUT`、`DELETE /api/lots/:id` | 试剂库 / 试剂批次 |
 | `GET`、`POST /api/{reactions,lots}/:id/attachments` | 附件列表、上传（附件属于反应或试剂批次） |
 | `GET`、`PATCH`、`DELETE /api/attachments/:id`；`/file`、`/preview` | 附件信息、下载原文件、缩略图 |
@@ -341,7 +341,9 @@ npm run deploy       # 构建并部署
 
 ```
 src/
-  App.tsx, main.tsx    应用入口
+  App.tsx, main.tsx    应用入口（页面骨架与状态连接）
+  app/                 App 用到的 hook：偏好设置（prefs.ts）、RDKit 加载、提示、存储位置与建议编号、
+                       添加/导入化合物、保存、导出（Word / Excel / SVG / PNG / CDXML / RXN）
   i18n.tsx             中英文文案
   useAutoLookup.ts     后台查询物态与密度
   chem/                化学计算与数据
@@ -361,7 +363,11 @@ src/
     refs.ts            参考文献格式化与 Crossref 解析
     runs.ts            多次实验：当前实验的数据在反应顶层，其余实验存于 runs[]，切换时交换
   components/          界面组件
-    ReactionPreview.tsx  反应式卡片
+    AppBar.tsx           顶栏（存储位置、已保存的反应、试剂库、缩写表、新建、语言）
+    DocHead.tsx          反应标题、编号、保存 / 另存为 / 下载
+    SchemeCard.tsx       反应式卡片（显示与导出工具、导入 / 添加化合物）
+    ReactionPreview.tsx  反应式预览（彩色 / 黑白）
+    TableCard.tsx        投料表卡片（放大缩小、导出、实际投料、按产物反推）
     StoichTable.tsx      投料表
     StructureEditor.tsx  Ketcher 结构编辑器（懒加载）
     RunBar.tsx           实验切换、新建实验、当前实验信息
@@ -382,6 +388,9 @@ src/
     importTable.ts     Excel / CSV 库存表解析与表头识别
   office/              Word (.docx) / Excel (.xlsx) 导出（手写 OOXML，按需加载）
   storage/             存储层
+    http.ts            访问本应用接口的 JSON 请求与错误（HttpError）
+    collection.ts      试剂库、缩写表共用：服务器 / 浏览器存储 + 页面共享缓存
+    lots.ts / inventory.ts / abbrs.ts  试剂库与缩写表（基于 collection.ts）
     types.ts           ReactionRepo 接口（list / get / create / update(带版本) / remove）
     index.ts           按 /api/health 自动选择服务器或本地存储
     localRepo.ts       浏览器 localStorage 实现（自动从旧格式迁移）

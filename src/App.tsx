@@ -1,492 +1,142 @@
-import type { MainModule } from '@rdkit/rdkit';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { loadRDKit } from './chem/rdkit';
-import { componentFromLot, type ReagentLot } from './chem/lots';
-import { activeRun, nextCode, runCode, runsOf } from './chem/runs';
-import { groupFragments, parseInputText } from './chem/parseInput';
-import { compoundKey, resolveParsed, type CompoundData, type Resolved } from './chem/resolve';
-import {
-  addComponent, emptyReaction, mergeComponents, newComponent, planForProduct, removeComponent, scale, updateComponent,
-  type Reaction, type Role,
-} from './chem/stoich';
-import { CompoundSearch } from './components/CompoundSearch';
-import { DetailPanel } from './components/DetailPanel';
-import Report from './components/Report';
-import { Attachments } from './components/Attachments';
-import { Inventory } from './components/Inventory';
-import { NumInput } from './components/NumInput';
-import { Procedure } from './components/Procedure';
-import { ReactionInput, type ApplyMode } from './components/ReactionInput';
-import { ReactionPreview, type SchemeLook } from './components/ReactionPreview';
-import { AbbrTable } from './components/AbbrTable';
 import { withAbbrs } from './chem/abbr';
-import { REPORT_LOOKS, type ReportLook, type SchemeLabels } from './chem/scheme';
-import { useAbbrs } from './storage/abbrs';
+import { REPORT_LOOKS, type SchemeLabels } from './chem/scheme';
+import { emptyReaction, updateComponent, type Reaction } from './chem/stoich';
+import type { EditorRequest, OpenEditor } from './app/editor';
+import { usePref, useUnits } from './app/prefs';
+import { useCompoundInput } from './app/useCompoundInput';
+import { useExports } from './app/useExports';
+import { useNotify } from './app/useNotify';
+import { useRDKit } from './app/useRDKit';
+import { useSaveReaction } from './app/useSaveReaction';
+import { useStorageInfo } from './app/useStorageInfo';
+import { AbbrTable } from './components/AbbrTable';
+import { AppBar } from './components/AppBar';
+import { Attachments } from './components/Attachments';
+import { DetailPanel } from './components/DetailPanel';
+import { DocHead } from './components/DocHead';
+import { Inventory } from './components/Inventory';
+import { Procedure } from './components/Procedure';
+import type { SchemeLook } from './components/ReactionPreview';
 import { References } from './components/References';
+import Report from './components/Report';
 import { RunBar } from './components/RunBar';
-import { SavedMenu } from './components/SavedMenu';
-import type { StructureEditorProps } from './components/StructureEditor';
-import { StoichTable } from './components/StoichTable';
-import { download, drawableEquation, reactionSmiles, toCsv, toMarkdown } from './export';
+import { SchemeCard } from './components/SchemeCard';
+import { TableCard } from './components/TableCard';
+import { download } from './export';
 import { useI18n } from './i18n';
-import { loadDraft, reactionToFile, repo, repoReady, saveDraft, type SavedReaction } from './storage';
+import { loadDraft, reactionToFile, saveDraft } from './storage';
+import { useAbbrs } from './storage/abbrs';
 import { useSavedDoc } from './storage/useSavedDoc';
-import { saveBlob } from './attachments/pack';
-import { lotRepo } from './storage/lots';
 import { useAutoLookup } from './useAutoLookup';
-import { DEFAULT_UNITS, MASS_UNITS, type Units } from './units';
 
 const StructureEditor = lazy(() => import('./components/StructureEditor'));
 
-export type OpenEditor = (req: Omit<StructureEditorProps, 'onClose'>) => void;
-
-function loadUnits(): Units {
-  try {
-    return { ...DEFAULT_UNITS, ...JSON.parse(localStorage.getItem('units') ?? '{}') };
-  } catch {
-    return DEFAULT_UNITS;
-  }
-}
-
-/** A remembered choice of this browser (first option when unset). */
-function loadPref<T extends string>(key: string, options: readonly T[]): T {
-  try {
-    const v = localStorage.getItem(key);
-    return options.includes(v as T) ? (v as T) : options[0];
-  } catch {
-    return options[0];
-  }
-}
-function savePref(key: string, v: string) {
-  try {
-    localStorage.setItem(key, v);
-  } catch {
-    /* not remembered */
-  }
-}
-
 export default function App() {
-  const { t, lang, setLang } = useI18n();
+  const { t } = useI18n();
   const [rxn, setRxn] = useState<Reaction>(() => loadDraft() ?? emptyReaction());
+  useEffect(() => saveDraft(rxn), [rxn]);
   const doc = useSavedDoc(rxn, setRxn);
   const { dirty, openId: savedId } = doc;
-  const [units, setUnits] = useState<Units>(loadUnits);
-  const [rd, setRd] = useState<MainModule | null>(null);
-  const [rdError, setRdError] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
-  const [planTarget, setPlanTarget] = useState<number | undefined>();
-  const [planYield, setPlanYield] = useState<number | undefined>(80);
-  const [editor, setEditor] = useState<Omit<StructureEditorProps, 'onClose'> | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [look, setLook] = useState<SchemeLook>(() => loadPref('schemeLook', ['color', 'mono'] as const));
-  const [labels, setLabels] = useState<SchemeLabels>(() => loadPref('schemeLabels', ['abbr', 'name'] as const));
+  const { rd, rdError } = useRDKit();
+  const { flash, notify } = useNotify();
+  const { storage, remote, suggestedCode } = useStorageInfo(savedId);
+  const pending = useAutoLookup(rxn, setRxn, rd);
+
+  const [units, setUnits] = useUnits();
+  const [look, setLook] = usePref<SchemeLook>('schemeLook', ['color', 'mono']);
+  const [labels, setLabels] = usePref<SchemeLabels>('schemeLabels', ['abbr', 'name']);
   // Scheme style in the PDF / Word reports (chosen in the report dialog).
-  const [reportLook, setReportLook] = useState<ReportLook>(() => loadPref('reportLook', REPORT_LOOKS));
-  const [abbrsOpen, setAbbrsOpen] = useState(false);
-  const abbrTable = useAbbrs();
+  const [reportLook, setReportLook] = usePref('reportLook', REPORT_LOOKS);
+
   // The reaction with every compound's effective abbreviation, for drawing.
+  const abbrTable = useAbbrs();
   const shown = useMemo(() => withAbbrs(rd, rxn, abbrTable ?? []), [rd, rxn, abbrTable]);
   const abbrMap = useMemo(() => new Map(shown.components.filter((c) => c.abbr).map((c) => [c.id, c.abbr!])), [shown]);
+
+  // Open panels and windows.
+  const [selected, setSelected] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [abbrsOpen, setAbbrsOpen] = useState(false);
+  const [editor, setEditor] = useState<EditorRequest | null>(null);
+  const openEditor: OpenEditor = setEditor;
   /** Graph node to reveal in the attachments card (e.g. a lot from the side panel). */
   const [focusNode, setFocusNode] = useState<string | null>(null);
-  const pending = useAutoLookup(rxn, setRxn, rd);
-  const [storage, setStorage] = useState<'local' | 'remote' | null>(null);
-  useEffect(() => {
-    repoReady.then(setStorage);
-  }, []);
-  const remote = storage === 'remote';
 
-  // Next free reaction code (from the saved list), offered when the code is empty.
-  const [suggestedCode, setSuggestedCode] = useState('RXN-001');
-  useEffect(() => {
-    if (!storage) return;
-    repo.list().then(
-      (list) => setSuggestedCode(nextCode(list.filter((s) => s.id !== savedId).map((s) => s.meta?.code))),
-      () => undefined,
-    );
-  }, [storage, savedId]);
-  const [showActual, setShowActual] = useState(false);
-  const run = activeRun(rxn);
-  const actualOn = showActual || run.status !== 'planned' || rxn.components.some((c) => c.actualAmount);
-
-  useEffect(() => {
-    loadRDKit().then(setRd, () => setRdError(true));
-  }, []);
-  useEffect(() => saveDraft(rxn), [rxn]);
-  useEffect(() => {
-    try {
-      localStorage.setItem('units', JSON.stringify(units));
-    } catch {
-      /* ignore */
-    }
-  }, [units]);
-
-  const notify = (msg: string) => {
-    setFlash(msg);
-    setTimeout(() => setFlash(null), 3500);
-  };
-
-  const add = (data: CompoundData, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...data, role })));
-  /** A bottle from the inventory: structure, physical data, purity / concentration and the lot link. */
-  const addLot = (lot: ReagentLot, role: Role) => setRxn((r) => addComponent(r, newComponent({ ...componentFromLot(lot), role })));
-  const [inventoryOpen, setInventoryOpen] = useState(false);
-  const applyInput = (res: Resolved, mode: ApplyMode) =>
-    setRxn((r) => {
-      const explicitEquiv = new Set<string>();
-      const incoming = res.items.map(({ data, role, equiv }) => {
-        const c = newComponent({ ...data, role, ...(equiv ? { equiv } : {}) });
-        if (equiv) explicitEquiv.add(c.id);
-        return c;
-      });
-      const next = mergeComponents(r, incoming, (c) => compoundKey(rd, c), {
-        replace: mode === 'replace',
-        hasAgents: res.hasAgents,
-        explicitEquiv,
-      });
-      const cond = res.conditions.join(', ');
-      const conditions = !cond ? r.conditions : mode === 'replace' || !r.conditions ? cond : `${r.conditions}, ${cond}`;
-      return { ...next, conditions };
-    });
-
-  /** Import a drawn reaction (or a set of drawn compounds). */
-  const importDrawing = async ({ text, isReaction }: { text: string; isReaction: boolean }) => {
-    // Unconnected drawn compounds come as one dotted SMILES: one compound per line instead.
-    const input = isReaction ? text : groupFragments(text).join('\n');
-    const parsed = parseInputText(rd, input);
-    if (!parsed) return;
-    const res = await resolveParsed(parsed, rd, lang);
-    applyInput(res, isReaction && rxn.components.length ? 'replace' : 'add');
-    notify(t.importedN.replace('{n}', String(res.items.length)));
-  };
-
-  const openEditor: OpenEditor = (req) => setEditor(req);
-
-  /** Save; "save as" asks for a new name and keeps the original. */
-  const save = async (asNew: boolean) => {
-    // A reaction gets the next free code when first saved without one.
-    let r = !savedId && !asNew && !rxn.code?.trim() ? { ...rxn, code: suggestedCode } : rxn;
-    if (r !== rxn) setRxn(r);
-    if (asNew) {
-      const name = prompt(t.saveAsPrompt, rxn.title ? `${rxn.title} ${t.copySuffix}` : '');
-      if (name === null) return;
-      r = { ...r, title: name.trim() };
-      setRxn(r);
-    }
-    try {
-      const res = await doc.save(r, {
-        asNew,
-        copyTitle: (title) => `${title || t.report.untitled} ${t.copySuffix}`,
-        resolveConflict: (cur: SavedReaction) =>
-          confirm(t.conflictAsk.replace('{time}', new Date(cur.updatedAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en')))
-            ? 'overwrite'
-            : 'copy',
-      });
-      const name = res.saved?.title || '—';
-      const msg = remote ? (asNew ? t.savedAsMsgRemote : t.savedMsgRemote) : asNew ? t.savedAsMsg : t.savedMsg;
-      if (res.outcome === 'updated') notify((remote ? t.savedMsgRemote : t.savedMsg).replace('{name}', name));
-      else if (res.outcome === 'created') notify(msg.replace('{name}', name));
-      else if (res.outcome === 'copied') notify(t.savedCopyMsg.replace('{name}', name));
-    } catch {
-      notify(t.saveFailed);
-    }
-  };
-
-  const [building, setBuilding] = useState(false);
-  /** Word report / Excel workbook of the reaction (generator loaded on demand). */
-  const exportOffice = async (kind: 'word' | 'excel') => {
-    setBuilding(true);
-    try {
-      const [m, lib] = await Promise.all([import('./office/report'), lotRepo.list().catch(() => [])]);
-      const used = new Set(runsOf(rxn).flatMap((r) => r.data.components.map((c) => c.lot?.lotId).filter(Boolean)));
-      const lots = new Map(lib.filter((l) => used.has(l.id)).map((l) => [l.id, l]));
-      const input = { rxn: shown, units, t, rd, lots, labels, look: reportLook };
-      if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
-      else saveBlob(m.excelWorkbook(input), `${fileBase}.xlsx`);
-    } catch (e) {
-      console.error(e);
-      notify(t.saveFailed);
-    } finally {
-      setBuilding(false);
-    }
-  };
-
-  /** The scheme in black and white (ChemDraw style): SVG / PNG picture, editable CDXML, or RXN structures. */
-  const exportScheme = async (f: 'svg' | 'png' | 'cdxml' | 'rxn') => {
-    const m = await import('./chem/scheme');
-    if (f === 'svg' || f === 'png') {
-      const out = m.schemeSvg(rd, shown, { background: f === 'png', labels });
-      if (!out) return;
-      if (f === 'svg') return saveBlob(new Blob([out.svg], { type: 'image/svg+xml' }), `${fileBase}.svg`);
-      const png = await m.svgToPng(out.svg, out.width, out.height).catch(() => null);
-      return png ? saveBlob(png, `${fileBase}.png`) : notify(t.saveFailed);
-    }
-    if (!rd) return notify(t.rdkitLoading);
-    const text = f === 'cdxml' ? m.schemeCdxml(rd, shown, labels) : m.schemeRxnfile(rd, rxn);
-    if (!text) return notify(t.scheme.noStructures);
-    saveBlob(new Blob([text], { type: f === 'cdxml' ? 'chemical/x-cdxml' : 'chemical/x-mdl-rxnfile' }), `${fileBase}.${f}`);
-  };
-
+  const input = useCompoundInput(rd, rxn, setRxn, notify);
+  const save = useSaveReaction({ rxn, setRxn, doc, suggestedCode, remote, notify });
+  const { building, fileBase, exportOffice, exportScheme } = useExports({ rxn, shown, units, rd, labels, reportLook, notify });
   const confirmDiscard = (what: string) => !dirty || confirm(t.unsaved + ' — ' + what + '?');
 
   const selectedC = rxn.components.find((c) => c.id === selected);
-  const product = rxn.components.find((c) => c.role === 'product');
-  const exportLabels = { roles: t.roles, col: t.col, yield: t.yield, actualMass: t.actualMass, actual: t.runs.actual, conditions: t.conditions, liquid: t.forms.liquid, notes: t.notes };
-  const fileBase = ([runCode(rxn, run), rxn.title].filter(Boolean).join(' ') || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
+  const hasComponents = rxn.components.length > 0;
 
   return (
     <div className="shell">
-      <header className="appbar no-print">
-        <div className="appbar-inner">
-          <div className="brand">
-            <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden>
-              <rect width="32" height="32" rx="7" fill="var(--accent)" />
-              <path d="M12 6h8M14 6v7l-6 11a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-6-11V6" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className="brand-name">{t.appTitle}</span>
-            <span className="brand-sub">{t.appSubtitle}</span>
-          </div>
-          <div className="top-actions">
-            {storage && (
-              <span className={'storage-chip ' + storage} title={remote ? t.storageTipRemote : t.storageTipLocal}>
-                {remote ? t.storageRemote : t.storageLocal}
-              </span>
-            )}
-            <SavedMenu
-              onNotify={notify}
-              currentId={savedId}
-              onOpen={async (id) => {
-                if (id !== savedId && !confirmDiscard(t.load)) return false;
-                try {
-                  const ok = await doc.open(id);
-                  if (!ok) notify(t.notFound);
-                  setSelected(null);
-                  return ok;
-                } catch {
-                  notify(t.loadFailed);
-                  return false;
-                }
-              }}
-              onOpenFile={(r) => {
-                if (!confirmDiscard(t.openFromFile)) return;
-                doc.detach(r);
-                setSelected(null);
-                notify(t.openedFile.replace('{name}', r.title || '—'));
-              }}
-              onDeleted={doc.removed}
-            />
-            <button className="ghost" onClick={() => setInventoryOpen(true)}>{t.inv.open}</button>
-            <button className="ghost" onClick={() => setAbbrsOpen(true)}>{t.abbr.title}</button>
-            <button
-              className="ghost"
-              onClick={() => {
-                if (!confirmDiscard(t.newReaction)) return;
-                doc.detach(emptyReaction());
-                setSelected(null);
-              }}
-            >
-              {t.newReaction}
-            </button>
-            <div className="lang" role="group" aria-label="Language">
-              <button className={lang === 'zh' ? 'on' : ''} onClick={() => setLang('zh')}>中文</button>
-              <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <AppBar
+        storage={storage}
+        doc={doc}
+        confirmDiscard={confirmDiscard}
+        onSwitched={() => setSelected(null)}
+        onNotify={notify}
+        onOpenInventory={() => setInventoryOpen(true)}
+        onOpenAbbrs={() => setAbbrsOpen(true)}
+        newReaction={emptyReaction}
+      />
 
       <main className="app">
-        <div className="doc-head">
-          <div className="title-block">
-            <input
-              className="title-input"
-              value={rxn.title}
-              placeholder={t.reactionTitlePh}
-              aria-label={t.reactionTitle}
-              onChange={(e) => setRxn({ ...rxn, title: e.target.value })}
-            />
-            <span className="code-field">
-              <span className="code-label">{t.runs.code}</span>
-              <input
-                className="code-input"
-                value={rxn.code ?? ''}
-                placeholder={t.runs.codePh.replace('{code}', suggestedCode)}
-                aria-label={t.runs.code}
-                onChange={(e) => setRxn({ ...rxn, code: e.target.value || undefined })}
-              />
-              {!rxn.code && (
-                <button className="link small no-print" onClick={() => setRxn({ ...rxn, code: suggestedCode })}>{t.runs.autoCode}</button>
-              )}
-            </span>
-          </div>
-          <div className="doc-actions no-print">
-            <span className={'save-state ' + (dirty ? 'dirty' : '')}>
-              {dirty ? t.unsaved : savedId ? t.savedState : ''}
-            </span>
-            <button onClick={() => save(false)} disabled={doc.busy || (!dirty && !!savedId)}>
-              {t.save}
-            </button>
-            {savedId && (
-              <button className="ghost" onClick={() => save(true)} title={t.saveAsTip}>
-                {t.saveAs}
-              </button>
-            )}
-            <button
-              className="ghost"
-              title={t.downloadTip}
-              disabled={!rxn.components.length}
-              onClick={() => download(`${fileBase}.reaction.json`, reactionToFile(rxn), 'application/json')}
-            >
-              {t.download}
-            </button>
-          </div>
-        </div>
+        <DocHead
+          rxn={rxn}
+          setRxn={setRxn}
+          suggestedCode={suggestedCode}
+          dirty={dirty}
+          savedId={savedId}
+          busy={doc.busy}
+          onSave={save}
+          onDownload={() => download(`${fileBase}.reaction.json`, reactionToFile(rxn), 'application/json')}
+        />
 
         <RunBar rxn={rxn} setRxn={setRxn} onNotify={notify} suggestedCode={suggestedCode} />
 
-        <section className="card">
-          <div className="card-head">
-            <h2>{t.preview}</h2>
-            <div className="card-tools no-print">
-              <div className="seg" role="group" aria-label={t.scheme.look}>
-                {(['color', 'mono'] as const).map((v) => (
-                  <button
-                    key={v}
-                    className={look === v ? 'on' : ''}
-                    aria-pressed={look === v}
-                    title={t.scheme.lookTips[v]}
-                    onClick={() => {
-                      setLook(v);
-                      savePref('schemeLook', v);
-                    }}
-                  >
-                    {t.scheme.looks[v]}
-                  </button>
-                ))}
-              </div>
-              <div className="seg" role="group" title={t.scheme.labelsTip}>
-                {(['abbr', 'name'] as const).map((v) => (
-                  <button
-                    key={v}
-                    className={labels === v ? 'on' : ''}
-                    aria-pressed={labels === v}
-                    onClick={() => {
-                      setLabels(v);
-                      savePref('schemeLabels', v);
-                    }}
-                  >
-                    {t.scheme.labels[v]}
-                  </button>
-                ))}
-              </div>
-              <div className="seg" role="group" aria-label={t.scheme.export}>
-                <span className="seg-label">{t.scheme.export}</span>
-                {(['svg', 'png', 'cdxml', 'rxn'] as const).map((f) => (
-                  <button key={f} title={t.scheme.formatTips[f]} disabled={!rxn.components.length} onClick={() => exportScheme(f)}>
-                    {f.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <ReactionPreview rxn={shown} rd={rd} rdError={rdError} look={look} labels={labels} onSelect={setSelected} />
-          {rxn.components.some((c) => c.smiles) && (
-            <details className="smiles-details">
-              <summary>SMILES</summary>
-              <p className="mono small muted break">{reactionSmiles(rxn)}</p>
-            </details>
-          )}
-          <div className="input-grid no-print">
-            <div className="input-block">
-              <h3>{t.importLabel}</h3>
-              <ReactionInput
-                rd={rd}
-                hasComponents={rxn.components.length > 0}
-                currentEquation={() => reactionSmiles(rxn)}
-                onApply={applyInput}
-                onDraw={() =>
-                  openEditor({
-                    mode: 'reaction',
-                    initial: drawableEquation(rxn),
-                    editing: rxn.components.length > 0,
-                    onApply: importDrawing,
-                  })
-                }
-              />
-            </div>
-            <div className="input-block">
-              <h3>{t.addCompound}</h3>
-              <CompoundSearch rd={rd} onAdd={add} onAddLot={addLot} openEditor={openEditor} />
-            </div>
-          </div>
-        </section>
+        <SchemeCard
+          rxn={rxn}
+          shown={shown}
+          rd={rd}
+          rdError={rdError}
+          look={look}
+          onLook={setLook}
+          labels={labels}
+          onLabels={setLabels}
+          onExport={exportScheme}
+          onSelect={setSelected}
+          openEditor={openEditor}
+          onApply={input.applyInput}
+          onDrawn={input.importDrawing}
+          onAdd={input.add}
+          onAddLot={input.addLot}
+        />
 
-        {rxn.components.length > 0 && (
-          <section className="card">
-            <div className="card-head">
-              <h2>{t.table}</h2>
-              <div className="toolbar no-print">
-                <div className="seg" role="group" aria-label={t.scale}>
-                  <span className="seg-label">{t.scale}</span>
-                  {[0.5, 2, 5, 10].map((f) => (
-                    <button key={f} onClick={() => setRxn(scale(rxn, f))}>×{f}</button>
-                  ))}
-                </div>
-                <div className="seg" role="group">
-                  <button onClick={() => navigator.clipboard.writeText(toMarkdown(rxn, units, exportLabels)).then(() => notify(t.copied))}>
-                    {t.exportMd}
-                  </button>
-                  <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
-                  <button disabled={building} title={`${t.office.word}\n${t.report.schemeStyle}: ${t.report.looks[reportLook]}`} onClick={() => exportOffice('word')}>Word</button>
-                  <button disabled={building} title={t.office.excel} onClick={() => exportOffice('excel')}>Excel</button>
-                </div>
-                {run.status === 'planned' && (
-                  <label className="check small" title={t.runs.actualTip}>
-                    <input type="checkbox" checked={actualOn} disabled={rxn.components.some((c) => c.actualAmount)} onChange={(e) => setShowActual(e.target.checked)} />
-                    {t.runs.actualToggle}
-                  </label>
-                )}
-                <button onClick={() => setReportOpen(true)}>{t.exportReport}</button>
-              </div>
-            </div>
-            <StoichTable
-              rxn={rxn}
-              abbrs={abbrMap}
-              units={units}
-              onUnits={setUnits}
-              pending={pending}
-              showActual={actualOn}
-              onChange={setRxn}
-              onSelect={setSelected}
-              onRemove={(id) => {
-                setRxn(removeComponent(rxn, id));
-                if (selected === id) setSelected(null);
-              }}
-            />
-            {product && rxn.refId && (
-              <div className="plan no-print">
-                <span className="plan-label">{t.plan}</span>
-                <label>
-                  {t.planTarget} ({units.mass})
-                  <NumInput value={planTarget} onCommit={setPlanTarget} onClear={() => setPlanTarget(undefined)} />
-                </label>
-                <label>
-                  {t.planYield}
-                  <NumInput value={planYield} sig={3} onCommit={setPlanYield} />
-                </label>
-                <button
-                  className="ghost small"
-                  disabled={!planTarget || !planYield}
-                  onClick={() => setRxn(planForProduct(rxn, product.id, planTarget! * MASS_UNITS[units.mass], planYield!))}
-                >
-                  {t.planApply}
-                </button>
-              </div>
-            )}
-          </section>
+        {hasComponents && (
+          <TableCard
+            rxn={rxn}
+            setRxn={setRxn}
+            units={units}
+            onUnits={setUnits}
+            abbrs={abbrMap}
+            pending={pending}
+            selected={selected}
+            onSelect={setSelected}
+            fileBase={fileBase}
+            building={building}
+            reportLook={reportLook}
+            onOffice={exportOffice}
+            onReport={() => setReportOpen(true)}
+            onNotify={notify}
+          />
         )}
 
-        {rxn.components.length > 0 && (
+        {hasComponents && (
           <Attachments
             rxn={rxn}
             setRxn={setRxn}
@@ -504,7 +154,7 @@ export default function App() {
           />
         )}
 
-        {rxn.components.length > 0 && (
+        {hasComponents && (
           <section className="card">
             <div className="card-head">
               <h2>{t.conditionsNotes}</h2>
@@ -526,7 +176,7 @@ export default function App() {
           </section>
         )}
 
-        {rxn.components.length > 0 && <References rxn={rxn} setRxn={setRxn} />}
+        {hasComponents && <References rxn={rxn} setRxn={setRxn} />}
 
         <footer className="muted small">{t.footer}</footer>
       </main>
@@ -556,7 +206,7 @@ export default function App() {
         />
       )}
       {abbrsOpen && <AbbrTable rd={rd} rxn={rxn} onClose={() => setAbbrsOpen(false)} onNotify={notify} />}
-      {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={addLot} onNotify={notify} />}
+      {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={input.addLot} onNotify={notify} />}
       {flash && <div className="toast">{flash}</div>}
       {reportOpen && (
         <Report
@@ -565,10 +215,7 @@ export default function App() {
           rd={rd}
           labels={labels}
           look={reportLook}
-          onLook={(v) => {
-            setReportLook(v);
-            savePref('reportLook', v);
-          }}
+          onLook={setReportLook}
           onWord={() => exportOffice('word')}
           wordBusy={building}
           reactionId={remote ? savedId : undefined}
