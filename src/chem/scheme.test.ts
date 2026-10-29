@@ -50,10 +50,16 @@ describe('scheme export', () => {
     expect(doc.querySelector('parsererror')).toBeNull();
   });
 
-  it('keeps atom colours when asked', () => {
-    const colours = new Set(schemeSvg(rd, rxn(), { color: true })!.svg.match(/#[0-9A-Fa-f]{6}\b/g));
-    expect(colours.size).toBeGreaterThan(1);
-    expect(colours.has('#FF0000')).toBe(true); // oxygen
+  it('draws the coloured styles', () => {
+    const colours = (svg: string) => new Set(svg.match(/#[0-9A-Fa-f]{6}\b/g));
+    const cd = schemeSvg(rd, rxn(), { style: 'cdcolor' })!;
+    expect(colours(cd.svg).has('#FF0000')).toBe(true); // oxygen
+    // Classic: same-size boxes (wider than the ACS drawing), names in grey.
+    const classic = schemeSvg(rd, rxn(), { style: 'color' })!;
+    expect(colours(classic.svg).has('#FF0000')).toBe(true);
+    expect(classic.svg).toContain('fill="#555555"');
+    expect(classic.width).toBeGreaterThan(cd.width);
+    expect(classic.svg.match(/<g transform="scale\(/g)).toHaveLength(3);
   });
 
   it('writes CDXML that reads back as the same reaction', () => {

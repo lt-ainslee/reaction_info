@@ -9,6 +9,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { formulaSubscripts } from '../procedure/chemText';
 import { SYMBOL_BY_Z } from './elements';
+import { smilesToSvg } from './rdkit';
 import type { Component, Reaction } from './stoich';
 
 const BOND = 30;
@@ -160,11 +161,15 @@ export interface SchemeLayout {
 }
 
 /**
- * Scheme style in reports: ChemDraw layout in black and white or with atom
- * colours, or the original layout (one coloured drawing per compound).
+ * Drawing style: the ChemDraw / ACS layout in black and white ('mono') or with
+ * atoms coloured by element ('cdcolor'), or the classic look ('color') — each
+ * structure as a coloured RDKit drawing in a box of the same size.
  */
 export type ReportLook = 'mono' | 'cdcolor' | 'color';
 export const REPORT_LOOKS: readonly ReportLook[] = ['mono', 'cdcolor', 'color'];
+
+/** Classic structure box (the reports' former 34 mm drawings, scaled to 10 pt text). */
+const CLASSIC = { w: 250, h: 181, src: { w: 200, h: 145 } };
 
 /** 'abbr': write a compound's abbreviation (`abbr`, when set) instead of its name. */
 export type SchemeLabels = 'abbr' | 'name';
@@ -190,9 +195,24 @@ export function nameLines(c: Component, w: number, labels: SchemeLabels = 'abbr'
   return text ? wrap([richText(text, c.id)], Math.max(w, BOND * 5)) : [];
 }
 
-export function layoutScheme(left: SchemeItem[], right: SchemeItem[], above: Line[], below: Line[]): SchemeLayout {
+/** Layout item for a compound: its structure box, or (none) its abbreviation / formula / name as text. */
+function itemFor(c: Component, labels: SchemeLabels, box: { w: number; h: number } | null): SchemeItem {
+  if (box) return { c, ...box, name: nameLines(c, box.w, labels) };
+  const w = lineWidth(richText(standIn(c, labels))) + BOND * 0.4;
+  return { c, w, h: BOND * 1.4, name: standIn(c, labels) !== labelOf(c, labels) ? nameLines(c, w, labels) : [] };
+}
+
+/** Reactants, products and arrow text; null when there is nothing to draw. */
+function schemeParts(rxn: Reaction, labels: SchemeLabels) {
+  const left = rxn.components.filter((c) => c.role === 'reactant');
+  const right = rxn.components.filter((c) => c.role === 'product');
+  const { above, below } = schemeText(rxn, labels);
+  return left.length || right.length || above.length || below.length ? { left, right, above, below } : null;
+}
+
+export function layoutScheme(left: SchemeItem[], right: SchemeItem[], above: Line[], below: Line[], minArrow = BOND * 3.5): SchemeLayout {
   const textW = Math.max(0, ...above.map(lineWidth), ...below.map(lineWidth));
-  const arrowLen = Math.max(BOND * 3.5, textW + BOND * 0.8);
+  const arrowLen = Math.max(minArrow, textW + BOND * 0.8);
   const all = [...left, ...right];
   const halfH = Math.max(BOND, ...all.map((it) => it.h / 2));
 
@@ -251,17 +271,34 @@ for (let z = 0; z <= 118; z++) BLACK[z] = [0, 0, 0];
 type MolSvg = { body: string; w: number; h: number };
 const molCache = new Map<string, MolSvg | null>();
 
-/** One structure in ACS proportions, black (default) or with RDKit's atom colours; `body` is the inner SVG markup. */
-export function monoMolSvg(rd: MainModule, smiles: string, color = false): MolSvg | null {
-  // Cached: the on-screen scheme is redrawn on every edit of the reaction.
-  const key = (color ? 'c:' : 'm:') + smiles;
+/** One structure in the given style; `body` is the inner SVG markup. Cached: the on-screen scheme is redrawn on every edit. */
+export function molSvg(rd: MainModule, smiles: string, style: ReportLook = 'mono'): MolSvg | null {
+  const key = `${style}:${smiles}`;
   if (molCache.has(key)) return molCache.get(key)!;
-  const out = drawMol(rd, smiles, color);
+  const out = style === 'color' ? classicMol(rd, smiles) : drawMol(rd, smiles, style === 'cdcolor');
   if (molCache.size >= 300) molCache.delete(molCache.keys().next().value!);
   molCache.set(key, out);
   return out;
 }
 
+/** The inner markup and size of an RDKit SVG. */
+function svgBody(svg: string): MolSvg | null {
+  const size = svg.match(/viewBox='0 0 ([\d.]+) ([\d.]+)'/);
+  const start = svg.indexOf('<!-- END OF HEADER -->');
+  if (!size || start < 0) return null;
+  return { body: svg.slice(start + '<!-- END OF HEADER -->'.length, svg.lastIndexOf('</svg>')).trim(), w: +size[1], h: +size[2] };
+}
+
+/** Classic: the app's coloured drawing, fitted to a fixed box. */
+function classicMol(rd: MainModule, smiles: string): MolSvg | null {
+  const svg = smilesToSvg(rd, smiles, CLASSIC.src.w, CLASSIC.src.h);
+  const m = svg ? svgBody(svg) : null;
+  if (!m) return null;
+  const k = CLASSIC.w / m.w;
+  return { body: `<g transform="scale(${n2(k)})">${m.body}</g>`, w: CLASSIC.w, h: m.h * k };
+}
+
+/** ACS 1996 proportions, black or with RDKit's atom colours. */
 function drawMol(rd: MainModule, smiles: string, color: boolean): MolSvg | null {
   const mol = rd.get_mol(smiles);
   if (!mol) return null;
@@ -281,19 +318,16 @@ function drawMol(rd: MainModule, smiles: string, color: boolean): MolSvg | null 
         ...(color ? {} : { atomColourPalette: BLACK }),
       }),
     );
-    const size = svg.match(/viewBox='0 0 ([\d.]+) ([\d.]+)'/);
-    const start = svg.indexOf('<!-- END OF HEADER -->');
-    if (!size || start < 0) return null;
-    let body = svg.slice(start + '<!-- END OF HEADER -->'.length, svg.lastIndexOf('</svg>')).trim();
+    const m = svgBody(svg);
     // Anything still coloured (e.g. stereo annotations) goes black too.
-    if (!color) body = body.replace(/#(?!000000)[0-9A-Fa-f]{6}\b/g, '#000000');
-    return { body, w: +size[1], h: +size[2] };
+    if (m && !color) m.body = m.body.replace(/#(?!000000)[0-9A-Fa-f]{6}\b/g, '#000000');
+    return m;
   } finally {
     mol.delete();
   }
 }
 
-function svgText(l: Line, cx: number, y: number, interactive: boolean): string {
+function svgText(l: Line, cx: number, y: number, interactive: boolean, fill?: string): string {
   const off = FS * 0.22;
   let shift = 0;
   const span = (r: TextRun) => {
@@ -316,7 +350,7 @@ function svgText(l: Line, cx: number, y: number, interactive: boolean): string {
     out += span(r);
   }
   if (open) out += '</tspan>';
-  return `<text x="${n2(cx)}" y="${n2(y)}" text-anchor="middle">${out}</text>`;
+  return `<text x="${n2(cx)}" y="${n2(y)}" text-anchor="middle"${fill ? ` fill="${fill}"` : ''}>${out}</text>`;
 }
 
 export interface SchemeSvgOptions {
@@ -326,31 +360,30 @@ export interface SchemeSvgOptions {
   background?: boolean;
   /** Abbreviations (default) or full names. */
   labels?: SchemeLabels;
-  /** Structures with atom colours instead of black and white. */
-  color?: boolean;
+  /** Drawing style (default ChemDraw black and white). */
+  style?: ReportLook;
 }
 
 /** The whole scheme as one standalone SVG (null when there is nothing to draw). */
 export function schemeSvg(rd: MainModule | null, rxn: Reaction, opts: SchemeSvgOptions = {}): { svg: string; width: number; height: number } | null {
-  const left = rxn.components.filter((c) => c.role === 'reactant');
-  const right = rxn.components.filter((c) => c.role === 'product');
   const labels = opts.labels ?? 'abbr';
-  const { above, below } = schemeText(rxn, labels);
-  if (!left.length && !right.length && !above.length && !below.length) return null;
+  const style = opts.style ?? 'mono';
+  const classic = style === 'color';
+  const parts0 = schemeParts(rxn, labels);
+  if (!parts0) return null;
+  const { left, right, above, below } = parts0;
 
   const bodies = new Map<string, string>();
   const item = (c: Component): SchemeItem => {
-    const mol = rd && c.smiles ? monoMolSvg(rd, c.smiles, opts.color) : null;
-    if (mol) {
-      bodies.set(c.id, mol.body);
-      return { c, w: mol.w, h: mol.h, name: nameLines(c, mol.w, labels) };
-    }
-    // No structure: the abbreviation / formula / name stands in for it.
-    const w = lineWidth(richText(standIn(c, labels))) + BOND * 0.4;
-    return { c, w, h: BOND * 1.4, name: standIn(c, labels) !== labelOf(c, labels) ? nameLines(c, w, labels) : [] };
+    const mol = rd && c.smiles ? molSvg(rd, c.smiles, style) : null;
+    if (mol) bodies.set(c.id, mol.body);
+    return itemFor(c, labels, mol);
   };
-  const L = layoutScheme(left.map(item), right.map(item), above, below);
+  const L = layoutScheme(left.map(item), right.map(item), above, below, classic ? CLASSIC.w * 0.8 : undefined);
   const i = !!opts.interactive;
+  // Classic: names in grey and slightly heavier lines, as the reports had them.
+  const nameFill = classic ? '#555555' : undefined;
+  const lw = n2((classic ? 0.9 : 0.6) / PT);
 
   const parts: string[] = [];
   if (opts.background) parts.push(`<rect width="100%" height="100%" fill="#ffffff"/>`);
@@ -360,18 +393,18 @@ export function schemeSvg(rd: MainModule | null, rxn: Reaction, opts: SchemeSvgO
     if (i) g.push(`<rect class="cd-hit" x="${n2(it.x)}" y="${n2(it.y)}" width="${n2(it.w)}" height="${n2(it.h)}" fill="transparent"/>`);
     if (body) g.push(`<g transform="translate(${n2(it.x)},${n2(it.y)})">${body}</g>`);
     else g.push(svgText(richText(standIn(it.c, labels)), it.x + it.w / 2, it.y + it.h / 2 + FS * 0.35, false).replace('<text ', '<text font-weight="bold" '));
-    it.name.forEach((l, k) => g.push(svgText(l, it.x + it.w / 2, it.nameY + k * LINE_H, false)));
+    it.name.forEach((l, k) => g.push(svgText(l, it.x + it.w / 2, it.nameY + k * LINE_H, false, nameFill)));
     parts.push(i ? `<g class="cd-item" data-cid="${esc(it.c.id)}">${g.join('')}</g>` : g.join('\n'));
   }
   for (const p of L.plus) {
     const s = FS * 0.35;
-    parts.push(`<path d="M${n2(p.x - s)},${n2(p.y)}H${n2(p.x + s)}M${n2(p.x)},${n2(p.y - s)}V${n2(p.y + s)}" stroke="#000" stroke-width="${n2(0.6 / PT)}"/>`);
+    parts.push(`<path d="M${n2(p.x - s)},${n2(p.y)}H${n2(p.x + s)}M${n2(p.x)},${n2(p.y - s)}V${n2(p.y + s)}" stroke="#000" stroke-width="${lw}"/>`);
   }
   const { x1, x2, y } = L.arrow;
   const head = BOND * 0.36;
   const hw = head * 0.32;
   parts.push(
-    `<path d="M${n2(x1 + 2)},${n2(y)}H${n2(x2 - head * 0.8)}" stroke="#000" stroke-width="${n2(0.6 / PT)}"/>` +
+    `<path d="M${n2(x1 + 2)},${n2(y)}H${n2(x2 - head * 0.8)}" stroke="#000" stroke-width="${lw}"/>` +
       `<path d="M${n2(x2)},${n2(y)}L${n2(x2 - head)},${n2(y - hw)}L${n2(x2 - head * 0.8)},${n2(y)}L${n2(x2 - head)},${n2(y + hw)}Z" fill="#000"/>`,
   );
   const cx = (x1 + x2) / 2;
@@ -506,21 +539,16 @@ const cdRuns = (l: Line, bold = false) =>
 
 /** ChemDraw document of the scheme: editable structures, arrow, text and the reaction step. */
 export function schemeCdxml(rd: MainModule | null, rxn: Reaction, labels: SchemeLabels = 'abbr'): string | null {
-  const left = rxn.components.filter((c) => c.role === 'reactant');
-  const right = rxn.components.filter((c) => c.role === 'product');
-  const { above, below } = schemeText(rxn, labels);
-  if (!left.length && !right.length && !above.length && !below.length) return null;
+  const parts0 = schemeParts(rxn, labels);
+  if (!parts0) return null;
+  const { left, right, above, below } = parts0;
 
   const pad = BOND * 0.45; // room for atom labels around the atom box
   const mols = new Map<string, CdMol>();
   const item = (c: Component): SchemeItem => {
     const m = rd && c.smiles ? molForCdxml(rd, c.smiles) : null;
-    if (m) {
-      mols.set(c.id, m);
-      return { c, w: m.w + 2 * pad, h: m.h + 2 * pad, name: nameLines(c, m.w + 2 * pad, labels) };
-    }
-    const w = lineWidth(richText(standIn(c, labels))) + BOND * 0.4;
-    return { c, w, h: BOND * 1.4, name: standIn(c, labels) !== labelOf(c, labels) ? nameLines(c, w, labels) : [] };
+    if (m) mols.set(c.id, m);
+    return itemFor(c, labels, m && { w: m.w + 2 * pad, h: m.h + 2 * pad });
   };
   const L = layoutScheme(left.map(item), right.map(item), above, below);
 
