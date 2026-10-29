@@ -344,7 +344,8 @@ src/
   App.tsx, main.tsx    应用入口（页面骨架与状态连接）
   app/                 App 用到的 hook：偏好设置（prefs.ts）、RDKit 加载、提示、存储位置与建议编号、
                        添加/导入化合物、保存、导出（Word / Excel / SVG / PNG / CDXML / RXN）
-  i18n.tsx             中英文文案
+  i18n/                中英文文案（zh.ts、en.ts）与语言切换（index.tsx）
+  styles/              样式，按功能分文件，index.css 按层叠顺序引入
   useAutoLookup.ts     后台查询物态与密度
   chem/                化学计算与数据
     stoich.ts          投料计算引擎（纯函数，内部单位 mmol / mg / µL）
@@ -413,6 +414,7 @@ worker/
   abbrs.ts             缩写表接口
   lots.ts              试剂库接口（/api/lots）
   attachments.ts       附件与节点图接口（R2 存文件，D1 存索引、连线和位置）；附件属于反应或试剂批次（lot:<id>）
+  test/                接口测试（d1.ts：用 Node 内置 SQLite 模拟 D1）
 docs/images/           README 使用的截图、图标与示意图
 ```
 

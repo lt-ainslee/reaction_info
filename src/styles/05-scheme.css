@@ -1,0 +1,36 @@
+/* ------------------------------------------------------------------
+   Scheme (rx- prefix: avoid collisions with third-party global CSS)
+   ------------------------------------------------------------------ */
+.rx-wrap { padding: 4px 0 0; min-height: 120px; display: flex; flex-direction: column; justify-content: center; }
+.rx-scheme { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.rx-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; flex: 0 1 auto; min-width: 0; }
+.rx-mol { display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 0; background: none; border: 0; color: var(--text); padding: 4px; white-space: normal; font-weight: 400; border-radius: 6px; }
+.rx-mol:hover:not(:disabled) { background: none; border: 0; }
+.rx-mol-img { width: clamp(110px, 11vw, 170px); aspect-ratio: 18 / 13; height: auto; filter: var(--mol-filter); }
+.rx-mol-text { width: clamp(100px, 9vw, 140px); aspect-ratio: 18 / 13; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 15px; color: var(--text-2); border: 1px dashed var(--border-strong); border-radius: 6px; padding: 4px; text-align: center; }
+.rx-mol-name { max-width: 170px; font-size: 12px; line-height: 1.35; text-align: center; color: var(--muted); }
+.rx-mol:hover .rx-mol-name, .rx-mol:focus-visible .rx-mol-name { color: var(--accent); }
+.rx-plus { font-size: 18px; color: var(--faint); padding: 0 2px; }
+.rx-placeholder { display: flex; align-items: center; justify-content: center; width: 110px; aspect-ratio: 18 / 13; border: 1px dashed var(--border-strong); border-radius: 6px; color: var(--faint); font-size: 12px; }
+.rx-arrow { flex: 0 0 clamp(120px, 14vw, 200px); display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+.rx-arrow-line { position: relative; height: 1.5px; background: var(--text-2); margin-right: 2px; }
+.rx-arrow-line::after { content: ''; position: absolute; right: -2px; top: 50%; transform: translateY(-50%); border-left: 10px solid var(--text-2); border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+.rx-arrow-text { display: flex; flex-wrap: wrap; gap: 0 8px; justify-content: center; font-size: 12px; line-height: 1.4; min-height: 17px; text-align: center; }
+.rx-above { align-items: flex-end; }
+.rx-below { align-items: flex-start; }
+.rx-agent { min-height: 0; background: none; border: 0; padding: 0; color: var(--text-2); font: inherit; white-space: normal; }
+.rx-agent:hover:not(:disabled) { background: none; border: 0; color: var(--accent); text-decoration: underline; }
+.rx-conditions { flex-basis: 100%; color: var(--muted); font-style: italic; }
+.card-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.abbr-chip { font-size: 11px; font-weight: 600; padding: 0 5px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); color: var(--text-2); }
+/* Black-and-white scheme: the exported SVG, on white like a printed page. */
+.rx-cd { align-self: center; width: min(100%, var(--cd-w)); }
+.rx-cd svg { display: block; width: 100%; height: auto; filter: var(--mol-filter); }
+.rx-cd .cd-item, .rx-cd tspan[data-cid] { cursor: pointer; }
+.rx-cd .cd-item:hover { opacity: 0.6; }
+.rx-cd tspan[data-cid]:hover { text-decoration: underline; }
+
+.smiles-details { margin-top: 10px; }
+.smiles-details summary { cursor: pointer; color: var(--faint); font-size: 12px; width: fit-content; }
+.smiles-details summary:hover { color: var(--muted); }
+.smiles-details p { margin: 4px 0 0; }

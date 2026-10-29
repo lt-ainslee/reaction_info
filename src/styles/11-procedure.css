@@ -1,0 +1,46 @@
+/* Procedure editor ------------------------------------------------------- */
+/* No contextual alternates: "->" or "3 x 2" must look like what is stored. */
+.pe-content, .pe-hint, .rp-proc { font-feature-settings: 'calt' 0; font-variant-ligatures: no-contextual; }
+.pe { border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--card); display: flex; flex-direction: column; }
+.pe:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pe-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 5px 6px; border-bottom: 1px solid var(--border); background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; min-height: 38px; }
+.pe-group { display: flex; gap: 1px; align-items: center; }
+.pe-group + .pe-group { padding-left: 10px; border-left: 1px solid var(--border); }
+.pe-right { margin-left: auto; gap: 6px; }
+.pe-right.pe-group { border-left: 0; }
+.pe-btn { min-width: 28px; min-height: 26px; padding: 0 6px; border: 0; background: transparent; color: var(--text-2); font-size: 13px; border-radius: 5px; line-height: 1; }
+.pe-btn:hover:not(:disabled) { background: var(--border); color: var(--text); }
+.pe-btn.on { background: var(--accent-soft); color: var(--accent); }
+.pe-btn:disabled { opacity: .35; }
+.pe-btn sub, .pe-btn sup { font-size: 9px; }
+.pe-body { flex: 1; min-height: 0; overflow: auto; }
+.pe-content { min-height: 150px; max-height: 520px; overflow: auto; padding: 10px 14px; outline: none; font-size: 14px; line-height: 1.65; resize: vertical; }
+.pe-content > :first-child { margin-top: 0; }
+.pe-content p { margin: 0 0 6px; }
+.pe-content h3 { font-size: 14px; font-weight: 650; margin: 12px 0 4px; color: var(--text); }
+.pe-content ol, .pe-content ul { margin: 0 0 6px; padding-left: 24px; }
+.pe-content li p { margin: 0 0 2px; }
+.pe-content li::marker { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pe-content .proc-obs { margin: 0 0 6px; padding: 4px 10px; border-left: 3px solid var(--ok); background: color-mix(in srgb, var(--ok) 9%, transparent); border-radius: 0 6px 6px 0; }
+.pe-content .proc-obs::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--ok); }
+.pe-content .proc-obs > :last-child { margin-bottom: 0; }
+.pe-content blockquote { margin: 0 0 6px; padding: 4px 10px; border-left: 3px solid var(--missing-border); background: var(--missing); border-radius: 0 6px 6px 0; }
+.pe-content hr { border: 0; border-top: 1px solid var(--border-strong); margin: 10px 0; }
+.pe-content hr.ProseMirror-selectednode { border-top-color: var(--accent); }
+.pe-content a { color: var(--accent); }
+.pe-content table { border-collapse: collapse; margin: 4px 0 8px; table-layout: fixed; width: auto; min-width: 50%; }
+.pe-content th, .pe-content td { border: 1px solid var(--border-strong); padding: 3px 8px; vertical-align: top; min-width: 60px; position: relative; }
+.pe-content th { background: var(--surface); font-weight: 600; text-align: left; }
+.pe-content th p, .pe-content td p { margin: 0; }
+.pe-content .selectedCell::after { content: ''; position: absolute; inset: 0; background: var(--accent-soft); opacity: .6; pointer-events: none; }
+.pe-content .tableWrapper { overflow-x: auto; }
+.pe-content p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--faint); float: left; height: 0; pointer-events: none; }
+.pe-hint { margin: 0; padding: 5px 10px; border-top: 1px solid var(--border); font-size: 11.5px; }
+.pe-loading .pe-content { opacity: .7; }
+.pe-full { position: fixed; inset: 0; z-index: 60; border-radius: 0; border: 0; box-shadow: none !important; }
+.pe-full .pe-toolbar { border-radius: 0; padding: 8px max(12px, calc((100vw - 900px) / 2)); }
+.pe-full .pe-body { display: flex; justify-content: center; background: var(--bg); }
+.pe-full .pe-content { width: min(900px, 100%); max-height: none; min-height: 100%; background: var(--card); padding: 28px 36px; resize: none; }
+.pe-full .pe-hint { padding: 6px max(12px, calc((100vw - 900px) / 2)); }
+body.pe-full-open { overflow: hidden; }
+@media print { .pe-toolbar, .pe-hint { display: none; } }
