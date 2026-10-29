@@ -10,16 +10,13 @@ import { useNotify } from './app/useNotify';
 import { useRDKit } from './app/useRDKit';
 import { useSaveReaction } from './app/useSaveReaction';
 import { useStorageInfo } from './app/useStorageInfo';
-import { AbbrTable } from './components/AbbrTable';
 import { AppBar } from './components/AppBar';
 import { Attachments } from './components/Attachments';
 import { DetailPanel } from './components/DetailPanel';
 import { DocHead } from './components/DocHead';
-import { Inventory } from './components/Inventory';
 import { Procedure } from './components/Procedure';
 import type { SchemeLook } from './components/ReactionPreview';
 import { References } from './components/References';
-import Report from './components/Report';
 import { RunBar } from './components/RunBar';
 import { SchemeCard } from './components/SchemeCard';
 import { TableCard } from './components/TableCard';
@@ -30,7 +27,11 @@ import { useAbbrs } from './storage/abbrs';
 import { useSavedDoc } from './storage/useSavedDoc';
 import { useAutoLookup } from './useAutoLookup';
 
+// Loaded when first opened.
 const StructureEditor = lazy(() => import('./components/StructureEditor'));
+const Report = lazy(() => import('./components/Report'));
+const Inventory = lazy(() => import('./components/Inventory').then((m) => ({ default: m.Inventory })));
+const AbbrTable = lazy(() => import('./components/AbbrTable').then((m) => ({ default: m.AbbrTable })));
 
 export default function App() {
   const { t } = useI18n();
@@ -206,10 +207,13 @@ export default function App() {
           }}
         />
       )}
-      {abbrsOpen && <AbbrTable rd={rd} rxn={rxn} onClose={() => setAbbrsOpen(false)} onNotify={notify} />}
-      {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={input.addLot} onNotify={notify} />}
+      <Suspense fallback={null}>
+        {abbrsOpen && <AbbrTable rd={rd} rxn={rxn} onClose={() => setAbbrsOpen(false)} onNotify={notify} />}
+        {inventoryOpen && <Inventory rd={rd} onClose={() => setInventoryOpen(false)} onAdd={input.addLot} onNotify={notify} />}
+      </Suspense>
       {flash && <div className="toast">{flash}</div>}
       {reportOpen && (
+        <Suspense fallback={null}>
         <Report
           rxn={rxn}
           units={units}
@@ -223,6 +227,7 @@ export default function App() {
           onChange={setRxn}
           onClose={() => setReportOpen(false)}
         />
+        </Suspense>
       )}
       {editor && (
         <Suspense fallback={<div className="modal-backdrop"><p className="toast">{t.editorLoading}</p></div>}>

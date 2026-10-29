@@ -4,7 +4,7 @@
 // to the current reaction from here or from the compound search.
 import type { MainModule } from '@rdkit/rdkit';
 import { useMemo, useRef, useState } from 'react';
-import { saveBlob } from '../attachments/pack';
+import { saveBlob } from '../export';
 import {
   available, compoundKey, lotSearchText, STOCK_STATUSES, VERIFICATIONS, type ReagentLot, type StockStatus, type Verification,
 } from '../chem/lots';

@@ -85,8 +85,9 @@ export function drawableEquation(rxn: Reaction): string | undefined {
   return left.length || right.length ? `${left.join('.')}>>${right.join('.')}` : undefined;
 }
 
-export function download(filename: string, content: string, type = 'text/csv;charset=utf-8') {
-  const url = URL.createObjectURL(new Blob([content], { type }));
+/** Let the browser save a file. */
+export function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;
@@ -94,5 +95,9 @@ export function download(filename: string, content: string, type = 'text/csv;cha
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+export function download(filename: string, content: string, type = 'text/csv;charset=utf-8') {
+  saveBlob(new Blob([content], { type }), filename);
 }

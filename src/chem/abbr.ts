@@ -24,16 +24,10 @@ let table: AbbrEntry[] = [];
 /** Replace the in-memory table (most recently updated first). */
 export function setAbbrTable(list: AbbrEntry[]) {
   table = [...list].sort((a, b) => b.updatedAt - a.updatedAt);
-  canon.clear();
 }
 export const abbrTable = () => table;
 
-const canon = new Map<string, string | null>();
-function canonOf(rd: MainModule | null, smiles?: string): string | undefined {
-  if (!rd || !smiles) return undefined;
-  if (!canon.has(smiles)) canon.set(smiles, canonicalSmiles(rd, smiles));
-  return canon.get(smiles) ?? undefined;
-}
+const canonOf = (rd: MainModule | null, smiles?: string) => (rd && smiles ? canonicalSmiles(rd, smiles) ?? undefined : undefined);
 
 type Ident = Pick<Component, 'name' | 'smiles' | 'cas'>;
 

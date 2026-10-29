@@ -24,13 +24,3 @@ export async function packNodes(nodes: Attachment[]): Promise<Blob> {
   return new Blob([zipSync(tree) as BlobPart], { type: 'application/zip' });
 }
 
-export function saveBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}

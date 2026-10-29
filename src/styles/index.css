@@ -1,0 +1,15 @@
+/* All styles, in cascade order (later files override earlier ones). */
+@import './01-tokens.css';
+@import './02-controls.css';
+@import './03-layout.css';
+@import './04-search.css';
+@import './05-scheme.css';
+@import './06-table.css';
+@import './07-panels.css';
+@import './08-responsive.css';
+@import './09-report.css';
+@import './10-attachments.css';
+@import './11-procedure.css';
+@import './12-runs.css';
+@import './13-lots.css';
+@import './14-inventory.css';
