@@ -1,9 +1,10 @@
 // The lab's reagent inventory: every bottle on the shelf (structure and
 // physical data for the calculator, supplier / catalog / lot, location,
-// pack and remaining amount, status, identity check). Bottles can be added
-// to the current reaction from here or from the compound search.
+// pack and remaining amount, status, identity check and its spectra).
+// Bottles can be added to the current reaction from here or from the
+// compound search.
 import type { MainModule } from '@rdkit/rdkit';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { saveBlob } from '../export';
 import {
   available, compoundKey, lotSearchText, STOCK_STATUSES, VERIFICATIONS, type ReagentLot, type StockStatus, type Verification,
@@ -13,9 +14,10 @@ import type { Form, Phase, Role } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import { parseCsv, parseXlsx, rowsToLots, type Field } from '../inventory/importTable';
 import { buildXlsx } from '../office/xlsx';
-import { newId } from '../storage';
+import { newId, repoReady } from '../storage';
 import { removeFromInventory, saveToInventory, useInventory } from '../storage/inventory';
 import { fmt } from '../units';
+import { LotSpectra } from './LotSpectra';
 
 interface Props {
   rd: MainModule | null;
@@ -25,6 +27,8 @@ interface Props {
 }
 
 type Filter = 'available' | 'all' | 'unavailable';
+/** Bottle open in the side form; `spectra`: scroll to its identity spectra. */
+type Editing = { lot: ReagentLot; spectra?: boolean };
 const ROLES: Role[] = ['reactant', 'reagent', 'catalyst', 'solvent'];
 
 const blank = (): ReagentLot => ({ id: newId(), key: '', name: '', status: 'in_stock', createdAt: Date.now(), updatedAt: Date.now(), compound: { form: 'neat' } });
@@ -36,8 +40,14 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('available');
   const [loc, setLoc] = useState('');
-  const [editing, setEditing] = useState<ReagentLot | null>(null);
+  const [ver, setVer] = useState<Verification | ''>('');
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [importing, setImporting] = useState(false);
+  // Identity spectra are stored on the server only.
+  const [remote, setRemote] = useState(false);
+  useEffect(() => {
+    repoReady.then((k) => setRemote(k === 'remote'));
+  }, []);
 
   const locations = useMemo(() => [...new Set((lots ?? []).map((l) => l.location).filter((x): x is string => !!x))].sort(), [lots]);
   const shown = useMemo(() => {
@@ -45,9 +55,10 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
     return (lots ?? [])
       .filter((l) => (filter === 'all' ? true : filter === 'available' ? available(l) : !available(l)))
       .filter((l) => !loc || l.location === loc)
+      .filter((l) => !ver || (l.verification ?? 'unverified') === ver)
       .filter((l) => words.every((w) => lotSearchText(l).includes(w)))
       .sort((a, b) => a.name.localeCompare(b.name, 'zh') || b.updatedAt - a.updatedAt);
-  }, [lots, q, filter, loc]);
+  }, [lots, q, filter, loc, ver]);
   const inStock = (lots ?? []).filter(available).length;
 
   const setStatus = (l: ReagentLot, status: StockStatus) => saveToInventory({ ...l, status }).catch(() => onNotify(t.saveFailed));
@@ -55,14 +66,14 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
   const exportXlsx = () => {
     const rows = [
       [I.name, 'CAS', I.formula, I.mw, t.lots.supplier, t.lots.spec, t.lots.catalog, t.lots.lot, I.quantity, I.remaining, I.location, I.status,
-        t.lots.received, I.expires, t.lots.purity, t.lots.molarity, I.owner, t.lots.verification, t.att.noteLabel],
+        t.lots.received, I.expires, t.lots.purity, t.lots.molarity, I.owner, t.lots.verification, t.lots.verificationNote, t.lots.spectra, t.att.noteLabel],
       ...(lots ?? []).map((l) => [
         l.name, l.cas, l.compound?.formula, l.compound?.mw, l.supplier, l.spec, l.catalogNumber, l.lotNumber, l.quantity, l.remaining, l.location,
         I.statuses[l.status ?? 'in_stock'], l.receivedAt, l.expiresAt, l.purity, l.molarity ?? l.compound?.molarity, l.owner,
-        t.lots.verifications[l.verification ?? 'unverified'], l.note,
+        t.lots.verifications[l.verification ?? 'unverified'], l.verificationNote, l.attachments, l.note,
       ]),
     ];
-    saveBlob(buildXlsx([{ name: I.title, rows, widths: [24, 12, 12, 9, 12, 16, 12, 12, 10, 10, 16, 9, 11, 11, 8, 8, 9, 9, 24] }]), `${I.title}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    saveBlob(buildXlsx([{ name: I.title, rows, widths: [24, 12, 12, 9, 12, 16, 12, 12, 10, 10, 16, 9, 11, 11, 8, 8, 9, 9, 20, 8, 24] }]), `${I.title}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   return (
@@ -74,7 +85,7 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
           <span className="grow" />
           <button className="ghost small" onClick={() => setImporting(true)}>{I.import}</button>
           <button className="ghost small" disabled={!lots?.length} onClick={exportXlsx}>{I.export}</button>
-          <button className="small" onClick={() => setEditing(blank())}>{I.add}</button>
+          <button className="small" onClick={() => setEditing({ lot: blank() })}>{I.add}</button>
           <button className="icon" onClick={onClose} aria-label={t.close}>×</button>
         </header>
 
@@ -93,6 +104,12 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
               ))}
             </select>
           )}
+          <select value={ver} onChange={(e) => setVer(e.target.value as Verification | '')} aria-label={t.lots.verification}>
+            <option value="">{I.allVerifications}</option>
+            {VERIFICATIONS.map((v) => (
+              <option key={v} value={v}>{t.lots.verifications[v]}</option>
+            ))}
+          </select>
         </div>
 
         <div className="inv-body">
@@ -115,11 +132,11 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
               </thead>
               <tbody>
                 {shown.map((l) => {
-                  const ver = l.verification ?? 'unverified';
+                  const v = l.verification ?? 'unverified';
                   return (
                     <tr key={l.id} className={available(l) ? '' : 'inv-gone'}>
                       <td>
-                        <button className="link inv-name" onClick={() => setEditing(l)}>{l.name}</button>
+                        <button className="link inv-name" onClick={() => setEditing({ lot: l })}>{l.name}</button>
                         <div className="inv-sub">
                           {[l.cas && `CAS ${l.cas}`, l.compound?.formula, l.compound?.mw && `MW ${fmt(l.compound.mw, 5)}`].filter(Boolean).join(' · ')}
                         </div>
@@ -140,8 +157,10 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
                         </select>
                       </td>
                       <td>
-                        <span className={'lot-ver v-' + ver}>{t.lots.verifications[ver]}</span>
-                        {!!l.attachments && <span className="lot-files"> · {l.attachments} {I.files}</span>}
+                        <button className="link inv-ver" title={I.openSpectra} onClick={() => setEditing({ lot: l, spectra: true })}>
+                          <span className={'lot-ver v-' + v}>{t.lots.verifications[v]}</span>
+                          {!!l.attachments && <span className="lot-files"> · {l.attachments} {I.files}</span>}
+                        </button>
                       </td>
                       <td className="inv-actions">
                         {available(l) && (
@@ -170,14 +189,25 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
           )}
         </div>
 
-        {editing && <LotForm key={editing.id} initial={editing} rd={rd} onClose={() => setEditing(null)} onNotify={onNotify} />}
+        {editing && (
+          <LotForm key={editing.lot.id} initial={editing.lot} focusSpectra={editing.spectra} rd={rd} remote={remote} onClose={() => setEditing(null)} onNotify={onNotify} />
+        )}
         {importing && <ImportDialog rd={rd} onClose={() => setImporting(false)} onNotify={onNotify} />}
       </div>
     </div>
   );
 }
 
-function LotForm({ initial, rd, onClose, onNotify }: { initial: ReagentLot; rd: MainModule | null; onClose: () => void; onNotify: (m: string) => void }) {
+interface LotFormProps {
+  initial: ReagentLot;
+  focusSpectra?: boolean;
+  rd: MainModule | null;
+  remote: boolean;
+  onClose: () => void;
+  onNotify: (m: string) => void;
+}
+
+function LotForm({ initial, focusSpectra, rd, remote, onClose, onNotify }: LotFormProps) {
   const { t, lang } = useI18n();
   const I = t.inv;
   const L = t.lots;
@@ -185,6 +215,8 @@ function LotForm({ initial, rd, onClose, onNotify }: { initial: ReagentLot; rd: 
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isNew = !initial.name;
+  // In the library: a new bottle is saved before its first spectrum is uploaded.
+  const [saved, setSaved] = useState(!isNew);
   const set = (p: Partial<ReagentLot>) => setL((x) => ({ ...x, ...p }));
   const setC = (p: Partial<NonNullable<ReagentLot['compound']>>) => setL((x) => ({ ...x, compound: { ...x.compound, ...p } }));
   const c = l.compound ?? {};
@@ -218,16 +250,35 @@ function LotForm({ initial, rd, onClose, onNotify }: { initial: ReagentLot; rd: 
     }
   };
 
+  const store = () => saveToInventory({ ...l, name: l.name.trim(), key: compoundKey(l) });
+
   const save = async () => {
     if (!l.name.trim()) return;
     setBusy(true);
     try {
-      await saveToInventory({ ...l, name: l.name.trim(), key: compoundKey(l) });
+      await store();
       onClose();
     } catch {
       onNotify(t.saveFailed);
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** Before uploading spectra: the lot must exist on the server. */
+  const ensureSaved = async () => {
+    if (saved) return true;
+    if (!l.name.trim()) {
+      onNotify(I.spectraNeedName);
+      return false;
+    }
+    try {
+      await store();
+      setSaved(true);
+      return true;
+    } catch {
+      onNotify(t.saveFailed);
+      return false;
     }
   };
 
@@ -331,9 +382,18 @@ function LotForm({ initial, rd, onClose, onNotify }: { initial: ReagentLot; rd: 
         </label>
         {text('verificationNote', L.verificationNote, L.verificationNotePh, true)}
         {text('note', t.att.noteLabel, '', true)}
+        <LotSpectra
+          lotId={l.id}
+          remote={remote}
+          saved={saved}
+          ensureSaved={ensureSaved}
+          verification={l.verification}
+          focus={focusSpectra}
+          onNotify={onNotify}
+        />
       </div>
       <footer className="row">
-        {!isNew && <button className="ghost small danger" onClick={remove}>{I.delete}</button>}
+        {saved && <button className="ghost small danger" onClick={remove}>{I.delete}</button>}
         <span className="grow" />
         <button className="ghost" onClick={onClose}>{I.cancel}</button>
         <button onClick={save} disabled={busy || !l.name.trim()}>{I.save}</button>
