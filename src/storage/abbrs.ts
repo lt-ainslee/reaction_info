@@ -4,6 +4,8 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { entryFor, normalizeAbbr, sameCompound, setAbbrTable, type AbbrEntry } from '../chem/abbr';
 import type { Component } from '../chem/stoich';
+import type { Access, Visibility } from './access';
+import { currentAccount } from './auth';
 import { createCollection } from './collection';
 import { isStatus } from './http';
 import { newId } from './ids';
@@ -19,7 +21,7 @@ const abbrs = createCollection<AbbrEntry>({
 /** Direct storage access (no cache): backup and restore. */
 export const abbrRepo = abbrs.repo;
 export const refreshAbbrs = abbrs.refresh;
-export const saveAbbr = (e: AbbrEntry) => abbrs.save(e);
+export const saveAbbr = (e: AbbrEntry, visibility?: Visibility) => abbrs.save(e, undefined, visibility);
 export const removeAbbr = abbrs.remove;
 /** The abbreviation table (null while loading the first time). */
 export const useAbbrs = abbrs.useAll;
@@ -46,12 +48,20 @@ export async function assignAbbr(
   self?: AbbrEntry,
 ): Promise<AbbrEntry | null> {
   const list = abbrs.current() ?? [];
-  const own = self ?? entryFor(rd, c, list);
-  const other = list.find((e) => e.abbr === abbr && e.id !== own?.id && !sameCompound(rd, e, c));
+  // Someone else's entry shared read-only is not changed: this makes one's own.
+  const found = self ?? entryFor(rd, c, list);
+  const own = found && (!found.access || found.access.canEdit) ? found : undefined;
+  const ownerOf = (a?: Access) => (!a ? 'local' : a.mine ? 'me' : a.ownerName ? `other:${a.ownerName}` : 'group');
+  const saving = own ? ownerOf(own.access) : currentAccount() ? 'me' : 'local';
+  // Abbreviations are unique per owner: only an entry of the same owner clashes.
+  const clash = list.filter((e) => e.abbr === abbr && e.id !== own?.id && !sameCompound(rd, e, c));
+  const other = clash.find((e) => ownerOf(e.access) === saving);
   if (other && !ask(other)) return null;
+  // Entries of others this one hides from the table (reload to show the right one).
+  const shadows = clash.length > (other ? 1 : 0) || (found && found !== own);
   const now = Date.now();
   try {
-    return await abbrs.save(
+    const saved = await abbrs.save(
       {
         id: own?.id ?? newId(),
         abbr,
@@ -66,6 +76,8 @@ export async function assignAbbr(
       },
       other?.id,
     );
+    if (shadows) await abbrs.refresh();
+    return saved;
   } catch (e) {
     if (!isStatus(e, 409)) throw e;
     await abbrs.refresh();

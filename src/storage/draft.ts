@@ -39,3 +39,13 @@ export function saveOpenId(id: string | undefined) {
     /* ignore */
   }
 }
+
+/** Forget the draft (signing out: it belongs to the account). */
+export function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT);
+    localStorage.removeItem(OPEN_ID);
+  } catch {
+    /* ignore */
+  }
+}

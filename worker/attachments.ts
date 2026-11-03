@@ -19,9 +19,14 @@
 //   POST   /api/reactions/:rid/links              { from, to, relation } — rejects cycles
 //   DELETE /api/reactions/:rid/links?from=&to=
 //   PUT    /api/reactions/:rid/positions          { positions: { id: [x, y] | null } }
-import { lotExists } from './lots';
+//
+// Access follows the owner: whoever may read the reaction / lot sees its
+// files; whoever may edit it uploads, links and deletes.
+import { accessOf, canRead } from '../src/storage/access';
+import type { User } from './auth';
+import { lotAccessRow } from './lots';
 import { getRow } from './reactions';
-import { error, ID_RE, json, userOf, type Env } from './http';
+import { error, forbidden, ID_RE, json, type Env } from './http';
 
 /** Request bodies above ~100 MB are rejected by Workers anyway. */
 const MAX_FILE = 95 * 1024 * 1024;
@@ -120,8 +125,24 @@ async function linkParents(db: D1Database, rid: string, to: string, parents: unk
 
 type OwnerKind = 'reactions' | 'lots';
 const ownerKey = (kind: OwnerKind, id: string) => (kind === 'lots' ? `lot:${id}` : id);
-const ownerExists = async (db: D1Database, kind: OwnerKind, id: string) =>
-  kind === 'lots' ? /^[A-Za-z0-9_-]{1,64}$/.test(id) && lotExists(db, id) : !!(await getRow(db, id));
+
+type Rights = 'none' | 'read' | 'edit';
+
+/** What `user` may do with the files of an owner (by its key: "<reaction id>" or "lot:<id>"). */
+async function rightsOn(db: D1Database, user: User, key: string): Promise<Rights> {
+  const lot = key.startsWith('lot:');
+  const id = lot ? key.slice(4) : key;
+  if (lot && !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return 'none';
+  const row = lot
+    ? await lotAccessRow(db, id).then((r) => r && { owner: r.created_by, visibility: r.visibility })
+    : await getRow(db, id);
+  if (!row || !canRead(user, row.owner, row.visibility)) return 'none';
+  return accessOf(user, row.owner, row.visibility).canEdit ? 'edit' : 'read';
+}
+
+/** null when allowed, else the error to answer. */
+const need = (have: Rights, want: 'read' | 'edit') =>
+  have === 'none' ? error(404, 'owner_not_found') : want === 'edit' && have !== 'edit' ? forbidden() : null;
 
 const getAtt = (db: D1Database, id: string) =>
   db.prepare(`SELECT ${COLS} FROM attachments WHERE id = ? AND deleted_at IS NULL`).bind(id).first<AttRow>();
@@ -146,7 +167,7 @@ function parseMetaHeader(req: Request): Record<string, unknown> | null {
   }
 }
 
-export async function handleAttachments(req: Request, env: Env, path: string): Promise<Response | null> {
+export async function handleAttachments(req: Request, env: Env, path: string, user: User): Promise<Response | null> {
   const db = env.DB;
   const method = req.method;
 
@@ -155,7 +176,10 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
     const owner = list[1] as OwnerKind;
     const oid = decodeURIComponent(list[2]);
     const rid = ownerKey(owner, oid);
+    const rights = await rightsOn(db, user, rid);
     if (method === 'GET') {
+      const denied = need(rights, 'read');
+      if (denied) return denied;
       const { results } = await db
         .prepare(`SELECT ${COLS} FROM attachments WHERE reaction_id = ? AND deleted_at IS NULL ORDER BY created_at`)
         .bind(rid)
@@ -164,7 +188,8 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
     }
     if (method === 'POST') {
       if (!env.FILES) return error(503, 'files_not_configured');
-      if (!(await ownerExists(db, owner, oid))) return error(404, 'owner_not_found');
+      const denied = need(rights, 'edit');
+      if (denied) return denied;
       const meta = parseMetaHeader(req);
       if (!meta || typeof meta.filename !== 'string') return error(400, 'bad_meta');
       const size = Number(req.headers.get('Content-Length'));
@@ -199,7 +224,7 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
           `INSERT INTO attachments (id, reaction_id, compound_id, kind, filename, size, sha256, content_type, r2_key, meta, note, uploaded_by, created_at, node_type)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(id, rid, compound, kind, filename, size, sha256, contentType, key, extra, note, userOf(req), now, nodeType)
+        .bind(id, rid, compound, kind, filename, size, sha256, contentType, key, extra, note, user.id, now, nodeType)
         .run();
       await linkParents(db, rid, id, meta.parentIds, oneOf(RELATIONS, meta.relation));
       return json(out((await getAtt(db, id))!), 201);
@@ -208,7 +233,7 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
   }
 
   const graph = /^\/api\/(reactions|lots)\/([^/]+)\/(graph|nodes|links|positions)$/.exec(path);
-  if (graph) return handleGraph(req, env, graph[1] as OwnerKind, decodeURIComponent(graph[2]), graph[3]);
+  if (graph) return handleGraph(req, env, user, graph[1] as OwnerKind, decodeURIComponent(graph[2]), graph[3]);
 
   const one = /^\/api\/attachments\/([^/]+)(\/file|\/preview)?$/.exec(path);
   if (!one) return null;
@@ -217,6 +242,10 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
   const sub = one[2];
   const row = await getAtt(db, id);
   if (!row) return error(404, 'not_found');
+  const rights = await rightsOn(db, user, row.reaction_id);
+  if (rights === 'none') return error(404, 'not_found');
+  const writing = method !== 'GET' && method !== 'HEAD';
+  if (writing && rights !== 'edit') return forbidden();
 
   if (sub === '/file' && method === 'GET') {
     const obj = row.r2_key ? await env.FILES?.get(row.r2_key) : null;
@@ -292,9 +321,12 @@ export async function handleAttachments(req: Request, env: Env, path: string): P
   return error(405, 'method_not_allowed');
 }
 
-async function handleGraph(req: Request, env: Env, kind: OwnerKind, oid: string, what: string): Promise<Response> {
+async function handleGraph(req: Request, env: Env, user: User, kind: OwnerKind, oid: string, what: string): Promise<Response> {
   const db = env.DB;
   const rid = ownerKey(kind, oid);
+  const rights = await rightsOn(db, user, rid);
+  const denied = need(rights, what === 'graph' && req.method === 'GET' ? 'read' : 'edit');
+  if (denied) return denied;
   const method = req.method;
   const readBody = async () => {
     try {
@@ -312,8 +344,6 @@ async function handleGraph(req: Request, env: Env, kind: OwnerKind, oid: string,
     return json({ nodes: (nodes.results as AttRow[]).map(out), links: (links.results as LinkRow[]).map(linkOut) });
   }
 
-  if (!(await ownerExists(db, kind, oid))) return error(404, 'owner_not_found');
-
   if (what === 'nodes' && method === 'POST') {
     const body = await readBody();
     const nodeType = oneOf(['sample', 'peaklist'] as const, body?.nodeType);
@@ -327,7 +357,7 @@ async function handleGraph(req: Request, env: Env, kind: OwnerKind, oid: string,
         `INSERT INTO attachments (id, reaction_id, compound_id, kind, filename, size, r2_key, meta, note, uploaded_by, created_at, node_type, label)
          VALUES (?, ?, ?, ?, ?, 0, '', ?, '', ?, ?, ?, ?)`,
       )
-      .bind(id, rid, compound, nodeType === 'sample' ? 'sample' : 'text', label || nodeType, meta, userOf(req), Date.now(), nodeType, label)
+      .bind(id, rid, compound, nodeType === 'sample' ? 'sample' : 'text', label || nodeType, meta, user.id, Date.now(), nodeType, label)
       .run();
     await linkParents(db, rid, id, body.parentIds, nodeType === 'peaklist' ? 'peaklist' : null);
     return json(out((await getAtt(db, id))!), 201);

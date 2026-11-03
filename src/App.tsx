@@ -96,6 +96,13 @@ export default function App() {
           busy={doc.busy}
           onSave={save}
           onDownload={() => download(`${fileBase}.reaction.json`, reactionToFile(rxn), 'application/json')}
+          access={remote ? doc.access : undefined}
+          onVisibility={(v) =>
+            doc.setVisibility(v).then(
+              () => notify(t.vis.changed.replace('{v}', t.vis[v])),
+              () => notify(t.saveFailed),
+            )
+          }
         />
 
         <RunBar rxn={rxn} setRxn={setRxn} onNotify={notify} suggestedCode={suggestedCode} />
@@ -144,6 +151,7 @@ export default function App() {
             setRxn={setRxn}
             reactionId={savedId}
             remote={remote}
+            readOnly={remote && !!doc.access && !doc.access.canEdit}
             onSave={() => save(false)}
             onNotify={notify}
             focusNode={focusNode}

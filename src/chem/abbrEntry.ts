@@ -1,4 +1,5 @@
 // One row of the abbreviation table (shared with the Worker: no browser deps).
+import type { Access } from '../storage/access';
 
 export interface AbbrEntry {
   id: string;
@@ -12,6 +13,8 @@ export interface AbbrEntry {
   note?: string;
   createdAt: number;
   updatedAt: number;
+  /** Who owns it and who may see / change it (from the server). */
+  access?: Access;
 }
 
 const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);

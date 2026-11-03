@@ -20,9 +20,14 @@ export const repo: ReactionRepo = {
   },
   list: () => repoReady.then(() => impl.list()),
   get: (id) => repoReady.then(() => impl.get(id)),
-  create: (r) => repoReady.then(() => impl.create(r)),
+  create: (r, v) => repoReady.then(() => impl.create(r, v)),
   update: (id, r, v) => repoReady.then(() => impl.update(id, r, v)),
   remove: (id) => repoReady.then(() => impl.remove(id)),
+  setVisibility: (id, v) =>
+    repoReady.then(() => {
+      if (!impl.setVisibility) throw new Error('sharing needs the server');
+      return impl.setVisibility(id, v);
+    }),
 };
 
 export * from './types';

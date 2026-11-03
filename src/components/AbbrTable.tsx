@@ -8,7 +8,9 @@ import { smilesToSvg } from '../chem/rdkit';
 import { resolveOne, type CompoundData } from '../chem/resolve';
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
+import type { Visibility } from '../storage/access';
 import { AbbrTakenError, assignAbbr, removeAbbr, saveAbbr, useAbbrs } from '../storage/abbrs';
+import { AccessBadge, VisibilitySelect } from './Account';
 
 interface Props {
   rd: MainModule | null;
@@ -151,7 +153,9 @@ export function AbbrTable({ rd, rxn, onClose, onNotify }: Props) {
               </thead>
               <tbody>
                 {shown.map((e) => (
-                  <Row key={e.id} e={e} rd={rd} onRename={(a) => rename(e, a)} onUpdate={(p) => update(e, p)} onRemove={async () => {
+                  <Row key={e.id} e={e} rd={rd} onRename={(a) => rename(e, a)} onUpdate={(p) => update(e, p)}
+                    onVisibility={(v) => saveAbbr(e, v).catch(() => onNotify(t.saveFailed))}
+                    onRemove={async () => {
                     if (!confirm(A.confirmRemove.replace('{a}', e.abbr))) return;
                     await removeAbbr(e.id).catch(() => onNotify(t.saveFailed));
                   }} />
@@ -165,13 +169,17 @@ export function AbbrTable({ rd, rxn, onClose, onNotify }: Props) {
   );
 }
 
-function Row({ e, rd, onRename, onUpdate, onRemove }: {
+function Row({ e, rd, onRename, onUpdate, onVisibility, onRemove }: {
   e: AbbrEntry;
   rd: MainModule | null;
   onRename: (a: string) => void;
   onUpdate: (p: Partial<AbbrEntry>) => void;
+  onVisibility: (v: Visibility) => void;
   onRemove: () => void;
 }) {
+  // Someone else's entry shared read-only: shown, not changed.
+  const ro = !!e.access && !e.access.canEdit;
+  const canRemove = !e.access || e.access.canManage || (e.access.canEdit && !e.access.ownerName);
   const { t } = useI18n();
   const svg = useMemo(() => (rd && e.smiles ? smilesToSvg(rd, e.smiles, 120, 80) : null), [rd, e.smiles]);
   // Inputs are keyed by the stored value so a rejected rename snaps back.
@@ -182,12 +190,12 @@ function Row({ e, rd, onRename, onUpdate, onRemove }: {
         {svg && <img alt="" src={'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)} />}
       </td>
       <td>
-        <input key={e.abbr} className="abbr-input" defaultValue={e.abbr} aria-label={t.abbr.field}
+        <input key={e.abbr} className="abbr-input" defaultValue={e.abbr} aria-label={t.abbr.field} readOnly={ro}
           onBlur={(ev) => commit(ev.target.value, e.abbr, onRename)}
           onKeyDown={(ev) => ev.key === 'Enter' && (ev.target as HTMLInputElement).blur()} />
       </td>
       <td>
-        <input key={e.name} defaultValue={e.name} aria-label={t.abbr.compound}
+        <input key={e.name} defaultValue={e.name} aria-label={t.abbr.compound} readOnly={ro}
           onBlur={(ev) => commit(ev.target.value, e.name, (name) => name && onUpdate({ name }))} />
       </td>
       <td className="inv-sub">
@@ -195,11 +203,12 @@ function Row({ e, rd, onRename, onUpdate, onRemove }: {
         {e.cas && <div>CAS {e.cas}</div>}
       </td>
       <td>
-        <input key={e.note ?? ''} defaultValue={e.note ?? ''} aria-label={t.abbr.note}
+        <input key={e.note ?? ''} defaultValue={e.note ?? ''} aria-label={t.abbr.note} readOnly={ro}
           onBlur={(ev) => commit(ev.target.value, e.note, (note) => onUpdate({ note: note || undefined }))} />
       </td>
       <td className="inv-actions">
-        <button className="small ghost" onClick={onRemove}>{t.abbr.remove}</button>
+        {e.access?.canManage ? <VisibilitySelect compact value={e.access.visibility} onChange={onVisibility} /> : <AccessBadge access={e.access} />}
+        {canRemove && <button className="small ghost" onClick={onRemove}>{t.abbr.remove}</button>}
       </td>
     </tr>
   );

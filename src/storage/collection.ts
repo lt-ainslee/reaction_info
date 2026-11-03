@@ -2,6 +2,7 @@
 // when /api is reachable, else in this browser — the same choice as saved
 // reactions (see index.ts) — plus one shared, cached copy for the page.
 import { useEffect, useSyncExternalStore } from 'react';
+import type { Access, Visibility } from './access';
 import { api, isStatus } from './http';
 import { repoReady } from './index';
 
@@ -9,13 +10,18 @@ export interface Item {
   id: string;
   createdAt: number;
   updatedAt: number;
+  /** Owner and visibility, from the server (not stored in the record). */
+  access?: Access;
 }
 
 export interface Repo<T extends Item> {
   /** Most recently updated first. */
   list(): Promise<T[]>;
-  /** Create or replace; `replaces` is deleted in the same step (server: one transaction). */
-  save(x: T, replaces?: string): Promise<T>;
+  /**
+   * Create or replace; `replaces` is deleted in the same step (server: one
+   * transaction). `visibility` (server only): who sees it; kept when absent.
+   */
+  save(x: T, replaces?: string, visibility?: Visibility): Promise<T>;
   remove(id: string): Promise<void>;
 }
 
@@ -37,9 +43,15 @@ export interface CollectionOptions<T extends Item> {
 const newestFirst = <T extends Item>(list: T[]) => [...list].sort((a, b) => b.updatedAt - a.updatedAt);
 
 export function createCollection<T extends Item>(o: CollectionOptions<T>) {
-  const valid = (list: unknown) => (Array.isArray(list) ? list : []).map(o.normalize).filter((x): x is T => !!x);
-  const one = (raw: unknown) => {
+  // `access` comes with server records and is not part of the data `normalize` checks.
+  const norm = (raw: unknown): T | null => {
     const x = o.normalize(raw);
+    const access = (raw as { access?: Access } | null)?.access;
+    return x && access && typeof access === 'object' ? { ...x, access } : x;
+  };
+  const valid = (list: unknown) => (Array.isArray(list) ? list : []).map(norm).filter((x): x is T => !!x);
+  const one = (raw: unknown) => {
+    const x = norm(raw);
     if (!x) throw new Error(`invalid record from ${o.path}`);
     return x;
   };
@@ -75,8 +87,9 @@ export function createCollection<T extends Item>(o: CollectionOptions<T>) {
     async list() {
       return valid(await api<unknown[]>(o.path));
     },
-    async save(x, replaces) {
-      const body = JSON.stringify({ [o.field]: x, ...(replaces ? { replaces } : {}) });
+    async save(x, replaces, visibility) {
+      const { access: _a, ...data } = x;
+      const body = JSON.stringify({ [o.field]: data, ...(replaces ? { replaces } : {}), ...(visibility ? { visibility } : {}) });
       try {
         return one(await api(item(x.id), { method: 'PUT', body }));
       } catch (e) {
@@ -93,7 +106,7 @@ export function createCollection<T extends Item>(o: CollectionOptions<T>) {
   const pick = () => repoReady.then((k) => (k === 'remote' ? remote : local));
   const repo: Repo<T> = {
     list: () => pick().then((r) => r.list()),
-    save: (x, replaces) => pick().then((r) => r.save(x, replaces)),
+    save: (x, replaces, visibility) => pick().then((r) => r.save(x, replaces, visibility)),
     remove: (id) => pick().then((r) => r.remove(id)),
   };
 
@@ -125,8 +138,8 @@ export function createCollection<T extends Item>(o: CollectionOptions<T>) {
     /** The cached list right now (null before the first load). */
     current: () => cached,
     /** Save and update the cached list. */
-    async save(x: T, replaces?: string): Promise<T> {
-      const saved = await repo.save(x, replaces);
+    async save(x: T, replaces?: string, visibility?: Visibility): Promise<T> {
+      const saved = await repo.save(x, replaces, visibility);
       const prev = cached?.find((y) => y.id === saved.id);
       const next = o.merge ? o.merge(saved, prev) : saved;
       set([next, ...(cached ?? []).filter((y) => y.id !== saved.id && y.id !== replaces)]);

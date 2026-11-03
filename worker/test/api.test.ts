@@ -6,11 +6,13 @@ import type { DatabaseSync } from 'node:sqlite';
 import { memoryD1 } from './d1';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- JSON replies of many shapes, checked by the assertions
-type Call = (path: string, init?: { method?: string; body?: unknown }) => Promise<{ status: number; body: any }>;
+type Reply = { status: number; body: any; cookie?: string };
+type Call = (path: string, init?: { method?: string; body?: unknown; cookie?: string | null; origin?: string }) => Promise<Reply>;
+/** Requests as the first account (alice, admin); pass `cookie` to act as someone else (null: signed out). */
 let call: Call;
 let sqlite: DatabaseSync;
 
-/** A fresh Worker module (its "schema applied" flag is per module) on a fresh database. */
+/** A fresh Worker module (its "schema applied" flag is per module) on a fresh database, with alice signed in. */
 async function start(prepare?: (s: DatabaseSync) => void) {
   vi.resetModules();
   const { default: worker } = await import('../index');
@@ -18,15 +20,32 @@ async function start(prepare?: (s: DatabaseSync) => void) {
   sqlite = d1.sqlite;
   prepare?.(sqlite);
   const env = { DB: d1.db, FILES: undefined, ASSETS: undefined } as never;
+  let alice: string | null = null;
   call = async (path, init = {}) => {
+    const headers: Record<string, string> = {};
+    if (init.body !== undefined) headers['Content-Type'] = 'application/json';
+    const cookie = init.cookie === undefined ? alice : init.cookie;
+    if (cookie) headers.Cookie = cookie;
+    if (init.origin) headers.Origin = init.origin;
     const req = new Request('http://test' + path, {
       method: init.method ?? 'GET',
-      ...(init.body !== undefined ? { body: JSON.stringify(init.body), headers: { 'Content-Type': 'application/json' } } : {}),
+      headers,
+      ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
     });
     const res = await worker.fetch!(req as never, env);
     const text = await res.text();
-    return { status: res.status, body: text ? JSON.parse(text) : null };
+    const set = res.headers.get('Set-Cookie');
+    return { status: res.status, body: text ? JSON.parse(text) : null, ...(set ? { cookie: set.split(';')[0] } : {}) };
   };
+  const setup = await call('/api/auth/setup', { method: 'POST', body: { username: 'alice', password: 'secret1', name: 'Alice' }, cookie: null });
+  alice = setup.cookie ?? null;
+}
+
+/** Register another account and return its session cookie. */
+async function signUp(username: string): Promise<string> {
+  const r = await call('/api/auth/register', { method: 'POST', body: { username, password: 'secret2', name: username }, cookie: null });
+  expect(r.status).toBe(201);
+  return r.cookie!;
 }
 
 beforeEach(() => start());
@@ -153,5 +172,132 @@ describe('abbreviation table', () => {
   it('rejects an entry without an abbreviation', async () => {
     const r = await call('/api/abbrs', { method: 'POST', body: entry('a', '') });
     expect(r).toMatchObject({ status: 422, body: { error: 'invalid_entry' } });
+  });
+});
+
+describe('accounts', () => {
+  it('needs a signed-in user for data, and tells a new site it needs its first account', async () => {
+    expect((await call('/api/reactions', { cookie: null })).status).toBe(401);
+    expect((await call('/api/auth/me')).body.user).toMatchObject({ username: 'alice', role: 'admin' });
+    // After setup, setup is closed; a fresh database asks for it.
+    expect((await call('/api/auth/setup', { method: 'POST', body: { username: 'eve', password: 'secret9' }, cookie: null })).status).toBe(409);
+    await start((s) => s.exec('SELECT 1'));
+    expect((await call('/api/auth/me', { cookie: null })).body).toMatchObject({ error: 'unauthorized', needsSetup: false, signup: 'open' });
+  });
+
+  it('signs in and out, rejects wrong passwords and stores only a hash', async () => {
+    await signUp('bob');
+    expect((await call('/api/auth/login', { method: 'POST', body: { username: 'bob', password: 'nope00' }, cookie: null })).status).toBe(401);
+    const ok = await call('/api/auth/login', { method: 'POST', body: { username: 'BOB', password: 'secret2' }, cookie: null });
+    expect(ok.status).toBe(200);
+    expect((await call('/api/auth/me', { cookie: ok.cookie })).body.user.username).toBe('bob');
+    await call('/api/auth/logout', { method: 'POST', cookie: ok.cookie });
+    expect((await call('/api/auth/me', { cookie: ok.cookie })).status).toBe(401);
+    const row = sqlite.prepare(`SELECT pw FROM users WHERE username = 'bob'`).get() as { pw: string };
+    expect(row.pw).toMatch(/^pbkdf2\$/);
+    expect(row.pw).not.toContain('secret2');
+  });
+
+  it('rejects taken user names, weak passwords and writes from other sites', async () => {
+    await signUp('bob');
+    expect((await call('/api/auth/register', { method: 'POST', body: { username: 'bob', password: 'secret3' }, cookie: null })).status).toBe(409);
+    expect((await call('/api/auth/register', { method: 'POST', body: { username: 'carol', password: '123' }, cookie: null })).status).toBe(422);
+    const r = await call('/api/reactions', { method: 'POST', body: { reaction: reaction() }, origin: 'http://evil.example' });
+    expect(r.status).toBe(403);
+  });
+
+  it('lets an admin close sign-up and disable accounts, but not remove the last admin', async () => {
+    const bob = await signUp('bob');
+    expect((await call('/api/admin/users', { cookie: bob })).status).toBe(403);
+    expect((await call('/api/admin/settings', { method: 'PUT', body: { signup: 'closed' } })).status).toBe(204);
+    expect((await call('/api/auth/register', { method: 'POST', body: { username: 'carol', password: 'secret3' }, cookie: null })).status).toBe(403);
+    const { users } = (await call('/api/admin/users')).body;
+    const bobId = users.find((u: { username: string }) => u.username === 'bob').id;
+    const aliceId = users.find((u: { username: string }) => u.username === 'alice').id;
+    expect((await call(`/api/admin/users/${aliceId}`, { method: 'PATCH', body: { role: 'member' } })).status).toBe(409);
+    expect((await call(`/api/admin/users/${bobId}`, { method: 'PATCH', body: { disabled: true } })).status).toBe(204);
+    expect((await call('/api/reactions', { cookie: bob })).status).toBe(401);
+  });
+});
+
+describe('private and shared records', () => {
+  it('keeps private reactions to their owner; shared ones are read-only for others', async () => {
+    const bob = await signUp('bob');
+    await call('/api/reactions', { method: 'POST', body: { id: 'rxn-priv', reaction: reaction('mine'), visibility: 'private' } });
+    await call('/api/reactions', { method: 'POST', body: { id: 'rxn-shared', reaction: reaction('ours'), visibility: 'shared' } });
+    await call('/api/reactions', { method: 'POST', body: { id: 'rxn-group', reaction: reaction('group'), visibility: 'editable' } });
+
+    const list = (await call('/api/reactions', { cookie: bob })).body;
+    expect(list.map((s: { id: string }) => s.id).sort()).toEqual(['rxn-group', 'rxn-shared']);
+    expect(list.find((s: { id: string }) => s.id === 'rxn-shared')).toMatchObject({ owner: 'Alice', access: { mine: false, canEdit: false } });
+    expect((await call('/api/reactions/rxn-priv', { cookie: bob })).status).toBe(404);
+    // Taking a private id does not reveal the reaction.
+    const clash = await call('/api/reactions', { method: 'POST', body: { id: 'rxn-priv', reaction: reaction() }, cookie: bob });
+    expect(clash).toMatchObject({ status: 409 });
+    expect(clash.body.current).toBeUndefined();
+
+    expect((await call('/api/reactions/rxn-shared', { method: 'PUT', body: { baseVersion: 1, reaction: reaction('x') }, cookie: bob })).status).toBe(403);
+    expect((await call('/api/reactions/rxn-group', { method: 'PUT', body: { baseVersion: 1, reaction: reaction('y') }, cookie: bob })).status).toBe(200);
+    // Only the owner deletes or changes sharing.
+    expect((await call('/api/reactions/rxn-group', { method: 'DELETE', cookie: bob })).status).toBe(403);
+    expect((await call('/api/reactions/rxn-shared/access', { method: 'PUT', body: { visibility: 'editable' }, cookie: bob })).status).toBe(403);
+    expect((await call('/api/reactions/rxn-shared/access', { method: 'PUT', body: { visibility: 'private' } })).status).toBe(200);
+    expect((await call('/api/reactions/rxn-shared', { cookie: bob })).status).toBe(404);
+    expect((await call('/api/reactions?scope=mine', { cookie: bob })).body).toEqual([]);
+  });
+
+  it('uses the account default visibility for new records', async () => {
+    const bob = await signUp('bob');
+    await call('/api/auth/profile', { method: 'PUT', body: { prefs: { reactions: 'shared' } } });
+    await call('/api/reactions', { method: 'POST', body: { id: 'rxn-0001', reaction: reaction() } });
+    expect((await call('/api/reactions', { cookie: bob })).body).toHaveLength(1);
+    await call('/api/auth/profile', { method: 'PUT', body: { prefs: { reactions: 'private' } } });
+    await call('/api/reactions', { method: 'POST', body: { id: 'rxn-0002', reaction: reaction() } });
+    expect((await call('/api/reactions', { cookie: bob })).body).toHaveLength(1);
+  });
+
+  it('keeps records from before accounts visible and editable to everyone', async () => {
+    const bob = await signUp('bob');
+    sqlite
+      .prepare(`INSERT INTO reactions (id, title, data, owner, version, created_at, updated_at) VALUES ('old-rxn1', 'old', ?, NULL, 1, 1, 1)`)
+      .run(JSON.stringify(reaction('old')));
+    const r = await call('/api/reactions/old-rxn1', { cookie: bob });
+    expect(r).toMatchObject({ status: 200, body: { access: { visibility: 'editable', canEdit: true, canManage: false } } });
+    // An admin looks after them.
+    expect((await call('/api/reactions/old-rxn1')).body.access.canManage).toBe(true);
+  });
+
+  it('applies the same rules to reagent lots', async () => {
+    const bob = await signUp('bob');
+    const lot = (id: string) => ({ id, key: 'cas:104-92-7', name: '4-bromoanisole', status: 'in_stock', createdAt: 1, updatedAt: 1 });
+    await call('/api/lots', { method: 'POST', body: { lot: lot('lot-a'), visibility: 'private' } });
+    await call('/api/lots', { method: 'POST', body: { lot: lot('lot-b'), visibility: 'shared' } });
+    expect((await call('/api/lots', { cookie: bob })).body.map((l: { id: string }) => l.id)).toEqual(['lot-b']);
+    expect((await call('/api/lots/lot-a', { cookie: bob })).status).toBe(404);
+    expect((await call('/api/lots/lot-b', { method: 'PUT', body: { lot: lot('lot-b') }, cookie: bob })).status).toBe(403);
+    expect((await call('/api/lots/lot-a/attachments', { cookie: bob })).status).toBe(404);
+    expect((await call('/api/lots/lot-b/attachments', { cookie: bob })).status).toBe(200);
+    // The owner changes the visibility with a PUT.
+    const put = await call('/api/lots/lot-a', { method: 'PUT', body: { lot: lot('lot-a'), visibility: 'editable' } });
+    expect(put.body.access).toMatchObject({ visibility: 'editable', mine: true });
+    expect((await call('/api/lots/lot-a', { method: 'PUT', body: { lot: lot('lot-a'), visibility: 'private' }, cookie: bob })).status).toBe(403);
+    expect((await call('/api/lots/lot-a', { method: 'PUT', body: { lot: lot('lot-a') }, cookie: bob })).status).toBe(200);
+  });
+
+  it('gives everyone their own abbreviations; their own win over shared ones', async () => {
+    const bob = await signUp('bob');
+    const entry = (id: string, abbr: string, name: string, visibility = 'shared') => ({ entry: { id, abbr, name }, visibility });
+    expect((await call('/api/abbrs', { method: 'POST', body: entry('a1', 'SM', 'alice-sm') })).status).toBe(201);
+    expect((await call('/api/abbrs', { method: 'POST', body: entry('a2', 'P', 'alice-p', 'private') })).status).toBe(201);
+    // Bob may use "SM" for his own compound.
+    expect((await call('/api/abbrs', { method: 'POST', body: entry('b1', 'SM', 'bob-sm', 'private'), cookie: bob })).status).toBe(201);
+    const bobs = (await call('/api/abbrs', { cookie: bob })).body;
+    expect(bobs.map((e: { id: string }) => e.id)).toEqual(['b1']);
+    const alices = (await call('/api/abbrs')).body;
+    expect(alices.map((e: { id: string }) => e.id).sort()).toEqual(['a1', 'a2']);
+    // Bob cannot take over Alice's entry with `replaces`.
+    await call('/api/abbrs', { method: 'POST', body: { ...entry('b2', 'X', 'bob-x'), replaces: 'a1' }, cookie: bob });
+    expect((await call('/api/abbrs')).body.map((e: { id: string }) => e.id).sort()).toEqual(['a1', 'a2', 'b2']);
+    expect((await call('/api/abbrs/a1', { method: 'DELETE', cookie: bob })).status).toBe(403);
   });
 });

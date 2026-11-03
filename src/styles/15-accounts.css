@@ -1,0 +1,55 @@
+/* ------------------------------------------------------------------
+   Accounts: sign-in page, account menu and dialogs, sharing labels.
+   ------------------------------------------------------------------ */
+.auth-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; background: var(--bg); }
+.auth-card { width: min(380px, 100%); background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 22px 18px; box-shadow: 0 12px 32px rgba(16, 24, 40, .08); display: flex; flex-direction: column; gap: 12px; }
+.auth-card > button[type='submit'] { margin-top: 4px; min-height: 36px; }
+.auth-brand { display: flex; align-items: center; gap: 10px; }
+.auth-brand strong { font-size: 16px; white-space: nowrap; }
+.auth-brand .grow, .acct-modal .grow { flex: 1 1 0; }
+.auth-brand .lang { flex: none; }
+.auth-notice { background: var(--missing); border: 1px solid var(--missing-border); border-radius: 6px; padding: 8px 10px; font-size: 13px; margin: 0; }
+.auth-switch { text-align: center; }
+.auth-card .field input { width: 100%; }
+.auth-card .hint { margin: 0; }
+
+.acct-btn { display: inline-flex; align-items: center; gap: 6px; }
+.acct-avatar { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 650; display: inline-flex; align-items: center; justify-content: center; }
+.acct-name { max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-list { width: 220px; display: flex; flex-direction: column; gap: 6px; }
+.acct-list > button { justify-content: flex-start; text-align: left; }
+.acct-modal { width: min(460px, 100%); }
+.acct-modal.wide { width: min(860px, 100%); }
+.acct-body { padding: 4px 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.acct-body section { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.acct-body section + section { border-top: 1px solid var(--border); padding-top: 14px; }
+.acct-body section > button, .acct-body > button { align-self: flex-start; }
+.acct-body h4 { font-size: 13px; font-weight: 650; margin: 0; }
+.acct-prefs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.acct-check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.acct-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.acct-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.acct-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.acct-table tr.acct-off td { opacity: .55; }
+.acct-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.acct-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.acct-add input { width: 140px; }
+.acct-add .hint { flex-basis: 100%; }
+
+.vis-badge { display: inline-block; font-size: 11px; line-height: 18px; padding: 0 7px; border-radius: 999px; white-space: nowrap; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); font-weight: 500; }
+.vis-badge.vis-private { color: var(--muted); }
+.vis-badge.vis-shared { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.vis-badge.vis-editable { color: var(--ok); border-color: transparent; background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.saved-item .vis-badge { align-self: flex-start; margin-top: 3px; }
+.inv-table .vis-badge { margin-top: 3px; }
+.vis-select { font-size: 12px; min-height: 28px; }
+.vis-select.compact { min-height: 24px; padding-top: 0; padding-bottom: 0; }
+.saved-scope { margin-bottom: 8px; }
+.readonly-note { margin: -6px 0 12px; font-size: 12.5px; color: var(--text-2); background: var(--missing); border: 1px solid var(--missing-border); border-radius: 6px; padding: 6px 10px; }
+.inv-form .readonly-note { margin: 0; }
+
+@media (max-width: 640px) {
+  .acct-name { display: none; }
+  .acct-prefs { grid-template-columns: 1fr; }
+  .acct-table th:nth-child(4), .acct-table td:nth-child(4) { display: none; }
+}

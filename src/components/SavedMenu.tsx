@@ -4,6 +4,9 @@ import { useI18n } from '../i18n';
 import { pendingLocalUploads, reactionFromFile, repo, uploadLocalReactions, type SavedSummary } from '../storage';
 import { saveBlob } from '../export';
 import { exportAll, restore } from '../storage/backup';
+import { AccessBadge } from './Account';
+
+type Scope = 'all' | 'mine' | 'others';
 
 interface Props {
   currentId?: string;
@@ -35,6 +38,8 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
     }
   };
 
+  const [scope, setScope] = useState<Scope>('all');
+  const shown = list?.filter((s) => scope === 'all' || !s.access || (scope === 'mine') === s.access.mine);
   const [pendingUpload, setPendingUpload] = useState(0);
   const [uploading, setUploading] = useState(false);
 
@@ -77,10 +82,17 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
               <button className="small" onClick={upload} disabled={uploading}>{uploading ? t.uploading : t.uploadBtn}</button>
             </div>
           )}
+          {list?.some((s) => s.access) && (
+            <div className="seg saved-scope" role="group" aria-label={t.vis.label}>
+              {(['all', 'mine', 'others'] as Scope[]).map((k) => (
+                <button key={k} className={scope === k ? 'on' : ''} onClick={() => setScope(k)}>{t.vis[k]}</button>
+              ))}
+            </div>
+          )}
           {error && <p className="warn small">{t.loadFailed}</p>}
           {!error && list === null && <p className="muted small">{t.loading}</p>}
-          {list?.length === 0 && <p className="muted">{t.noSaved}</p>}
-          {list?.map((s) => (
+          {shown?.length === 0 && <p className="muted">{t.noSaved}</p>}
+          {shown?.map((s) => (
             <div key={s.id} className={'saved-item' + (s.id === currentId ? ' current' : '')}>
               <button
                 className="link"
@@ -98,10 +110,11 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
                   {s.meta && s.meta.runs > 1 && <>{t.runs.count.replace('{n}', String(s.meta.runs))} · </>}
                   {s.meta?.bestYield !== undefined && <>{t.runs.best.replace('{y}', String(s.meta.bestYield))} · </>}
                   {new Date(s.updatedAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en')}
-                  {s.owner && ` · ${s.owner}`}
+                  {!s.access && s.owner && ` · ${s.owner}`}
                 </small>
+                {s.access && <AccessBadge access={s.access} />}
               </button>
-              <button
+              {(!s.access || s.access.canManage) && <button
                 className="icon"
                 aria-label={t.delete}
                 title={t.delete}
@@ -117,7 +130,7 @@ export function SavedMenu({ currentId, onOpen, onDeleted, onOpenFile, onNotify }
                 }}
               >
                 ×
-              </button>
+              </button>}
             </div>
           ))}
           <div className="saved-footer">

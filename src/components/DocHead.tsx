@@ -1,6 +1,8 @@
-// Reaction title and code, save state, save / save as / download.
+// Reaction title and code, save state, sharing, save / save as / download.
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
+import type { Access, Visibility } from '../storage/access';
+import { AccessBadge, VisibilitySelect } from './Account';
 
 interface Props {
   rxn: Reaction;
@@ -11,11 +13,16 @@ interface Props {
   busy: boolean;
   onSave: (asNew: boolean) => void;
   onDownload: () => void;
+  /** Owner and sharing of the open saved reaction (server only). */
+  access?: Access;
+  onVisibility?: (v: Visibility) => void;
 }
 
-export function DocHead({ rxn, setRxn, suggestedCode, dirty, savedId, busy, onSave, onDownload }: Props) {
+export function DocHead({ rxn, setRxn, suggestedCode, dirty, savedId, busy, onSave, onDownload, access, onVisibility }: Props) {
   const { t } = useI18n();
+  const readOnly = !!savedId && !!access && !access.canEdit;
   return (
+    <>
     <div className="doc-head">
       <div className="title-block">
         <input
@@ -40,13 +47,18 @@ export function DocHead({ rxn, setRxn, suggestedCode, dirty, savedId, busy, onSa
         </span>
       </div>
       <div className="doc-actions no-print">
+        {savedId && access && (access.canManage && onVisibility ? (
+          <VisibilitySelect value={access.visibility} onChange={onVisibility} />
+        ) : (
+          <AccessBadge access={access} />
+        ))}
         <span className={'save-state ' + (dirty ? 'dirty' : '')}>
           {dirty ? t.unsaved : savedId ? t.savedState : ''}
         </span>
-        <button onClick={() => onSave(false)} disabled={busy || (!dirty && !!savedId)}>
-          {t.save}
+        <button onClick={() => onSave(false)} disabled={busy || (!dirty && !!savedId && !readOnly)} title={readOnly ? t.vis.readOnly.replace('{name}', access?.ownerName ?? t.vis.group) : undefined}>
+          {readOnly ? t.saveAs : t.save}
         </button>
-        {savedId && (
+        {savedId && !readOnly && (
           <button className="ghost" onClick={() => onSave(true)} title={t.saveAsTip}>
             {t.saveAs}
           </button>
@@ -56,5 +68,7 @@ export function DocHead({ rxn, setRxn, suggestedCode, dirty, savedId, busy, onSa
         </button>
       </div>
     </div>
+    {readOnly && <p className="readonly-note no-print">{t.vis.readOnly.replace('{name}', access?.ownerName ?? t.vis.group)}</p>}
+    </>
   );
 }

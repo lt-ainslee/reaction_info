@@ -21,6 +21,9 @@ export const apiRepo: ReactionRepo & {
 
   list: () => call<SavedSummary[]>(BASE),
 
+  setVisibility: (id, visibility) =>
+    call<SavedSummary>(`${BASE}/${encodeURIComponent(id)}/access`, { method: 'PUT', body: JSON.stringify({ visibility }) }),
+
   async get(id) {
     try {
       return toSaved(await call<SavedReaction>(`${BASE}/${encodeURIComponent(id)}`));
@@ -30,8 +33,8 @@ export const apiRepo: ReactionRepo & {
     }
   },
 
-  async create(reaction) {
-    return toSaved(await call<SavedReaction>(BASE, { method: 'POST', body: JSON.stringify({ reaction }) }));
+  async create(reaction, visibility) {
+    return toSaved(await call<SavedReaction>(BASE, { method: 'POST', body: JSON.stringify({ reaction, ...(visibility ? { visibility } : {}) }) }));
   },
 
   async update(id, reaction, baseVersion) {

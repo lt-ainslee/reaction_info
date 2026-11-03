@@ -4,6 +4,7 @@
 // run, so later edits to the library don't rewrite old records. Spectra
 // that identify a lot are attached to the lot, so every reaction using the
 // bottle sees them.
+import type { Access } from '../storage/access';
 import type { Component, Form, Phase } from './stoich';
 
 export type LotSource = 'commercial' | 'made';
@@ -70,6 +71,8 @@ export interface ReagentLot extends LotInfo {
   updatedAt: number;
   /** Number of attached files (from the server). */
   attachments?: number;
+  /** Who owns it and who may see / change it (from the server). */
+  access?: Access;
 }
 
 /** What a component stores: the lot info at the time, plus the library id. */

@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { canonicalJson } from '../chem/runs';
 import type { Reaction } from '../chem/stoich';
+import type { Access, Visibility } from './access';
 import { loadOpenId, saveOpenId } from './draft';
+import { isStatus } from './http';
 import { repo } from './index';
 import { ConflictError, NotFoundError, type SavedReaction } from './types';
 
@@ -12,6 +14,8 @@ interface Bound {
   version: number;
   /** Canonical JSON of the reaction as last saved, to detect unsaved changes (switching runs isn't one). */
   snapshot: string;
+  /** Who may change it (server only). */
+  access?: Access;
 }
 
 export type ConflictChoice = 'overwrite' | 'copy' | 'cancel';
@@ -34,7 +38,7 @@ export function useSavedDoc(rxn: Reaction, setRxn: Dispatch<SetStateAction<React
     repo.get(id).then(
       (s) => {
         if (cancelled) return;
-        if (s) setBound({ id: s.id, version: s.version, snapshot: canonicalJson(s.reaction) });
+        if (s) setBound({ id: s.id, version: s.version, snapshot: canonicalJson(s.reaction), access: s.access });
         else saveOpenId(undefined);
       },
       () => {
@@ -49,7 +53,7 @@ export function useSavedDoc(rxn: Reaction, setRxn: Dispatch<SetStateAction<React
   useEffect(() => saveOpenId(bound?.id), [bound?.id]);
 
   const bind = useCallback((s: SavedReaction) => {
-    setBound({ id: s.id, version: s.version, snapshot: canonicalJson(s.reaction) });
+    setBound({ id: s.id, version: s.version, snapshot: canonicalJson(s.reaction), access: s.access });
   }, []);
 
   /** Load a saved reaction into the editor. Returns false if it no longer exists. */
@@ -89,6 +93,15 @@ export function useSavedDoc(rxn: Reaction, setRxn: Dispatch<SetStateAction<React
           bind(saved);
           return { saved, outcome: 'created' };
         }
+        // Someone else's reaction shared read-only: keep the changes as one's own copy.
+        const saveCopy = async () => {
+          const copy = { ...r, title: opts.copyTitle(r.title) };
+          const saved = await repo.create(copy);
+          setRxn(copy);
+          bind(saved);
+          return { saved, outcome: 'copied' } as const;
+        };
+        if (bound.access && !bound.access.canEdit) return await saveCopy();
         try {
           const saved = await repo.update(bound.id, r, bound.version);
           bind(saved);
@@ -100,6 +113,8 @@ export function useSavedDoc(rxn: Reaction, setRxn: Dispatch<SetStateAction<React
             bind(saved);
             return { saved, outcome: 'created' };
           }
+          // No longer editable (unshared in the meantime).
+          if (isStatus(e, 403)) return await saveCopy();
           if (!(e instanceof ConflictError)) throw e;
           const choice = opts.resolveConflict(e.current);
           if (choice === 'cancel') return { saved: null, outcome: 'cancelled' };
@@ -108,11 +123,7 @@ export function useSavedDoc(rxn: Reaction, setRxn: Dispatch<SetStateAction<React
             bind(saved);
             return { saved, outcome: 'updated' };
           }
-          const copy = { ...r, title: opts.copyTitle(r.title) };
-          const saved = await repo.create(copy);
-          setRxn(copy);
-          bind(saved);
-          return { saved, outcome: 'copied' };
+          return await saveCopy();
         }
       } finally {
         setBusy(false);
@@ -126,7 +137,14 @@ export function useSavedDoc(rxn: Reaction, setRxn: Dispatch<SetStateAction<React
     setBound((b) => (b?.id === id ? null : b));
   }, []);
 
+  /** Share / unshare the open reaction (its owner, on the server). */
+  const setVisibility = useCallback(async (v: Visibility) => {
+    if (!bound) return;
+    const s = await repo.setVisibility!(bound.id, v);
+    setBound((b) => (b && b.id === s.id ? { ...b, access: s.access } : b));
+  }, [bound]);
+
   const dirty = bound === null ? rxn.components.length > 0 : canonicalJson(rxn) !== bound.snapshot;
 
-  return { openId: bound?.id, dirty, busy, open, detach, save, removed };
+  return { openId: bound?.id, access: bound?.access, dirty, busy, open, detach, save, removed, setVisibility };
 }

@@ -129,6 +129,40 @@ export const MIGRATIONS: { version: number; sql: string[] }[] = [
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_abbr_live ON abbreviations (abbr) WHERE deleted_at IS NULL`,
     ],
   },
+  {
+    version: 8,
+    sql: [
+      // Accounts. Records get an owner (reactions.owner, created_by elsewhere:
+      // a user id) and a visibility (src/storage/access.ts). Everything saved
+      // before accounts has no owner and stays group data ('editable').
+      `CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        pw TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member',
+        prefs TEXT NOT NULL DEFAULT '{}',
+        disabled INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        last_login INTEGER
+      )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)`,
+      `CREATE TABLE IF NOT EXISTS sessions (
+        token_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)`,
+      `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+      `ALTER TABLE reactions ADD COLUMN visibility TEXT NOT NULL DEFAULT 'editable'`,
+      `ALTER TABLE reagent_lots ADD COLUMN visibility TEXT NOT NULL DEFAULT 'editable'`,
+      `ALTER TABLE abbreviations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'editable'`,
+      // Everyone may have their own "SM-1": one live entry per abbreviation per owner.
+      `DROP INDEX IF EXISTS idx_abbr_live`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_abbr_owner_live ON abbreviations (COALESCE(created_by, ''), abbr) WHERE deleted_at IS NULL`,
+    ],
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

@@ -1,5 +1,8 @@
 // JSON requests to this app's own API (/api/*, worker/).
 
+/** Window event fired when the server answers 401 to a data request. */
+export const AUTH_REQUIRED = 'reaction-info:auth-required';
+
 export class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -25,6 +28,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => null);
+  // Signed out (session expired, or signed out in another tab): ask to sign in again.
+  if (res.status === 401 && !path.startsWith('/api/auth/') && typeof window !== 'undefined') window.dispatchEvent(new Event(AUTH_REQUIRED));
   if (!res.ok) throw new HttpError(res.status, body);
   return body as T;
 }

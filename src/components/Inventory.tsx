@@ -18,6 +18,9 @@ import { newId, repoReady } from '../storage';
 import { removeFromInventory, saveToInventory, useInventory } from '../storage/inventory';
 import { fmt } from '../units';
 import { LotSpectra } from './LotSpectra';
+import { AccessBadge, VisibilitySelect } from './Account';
+import type { Visibility } from '../storage/access';
+import { useAccount } from '../storage/auth';
 
 interface Props {
   rd: MainModule | null;
@@ -41,6 +44,7 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
   const [filter, setFilter] = useState<Filter>('available');
   const [loc, setLoc] = useState('');
   const [ver, setVer] = useState<Verification | ''>('');
+  const [scope, setScope] = useState<'all' | 'mine' | 'others'>('all');
   const [editing, setEditing] = useState<Editing | null>(null);
   const [importing, setImporting] = useState(false);
   // Identity spectra are stored on the server only.
@@ -56,9 +60,10 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
       .filter((l) => (filter === 'all' ? true : filter === 'available' ? available(l) : !available(l)))
       .filter((l) => !loc || l.location === loc)
       .filter((l) => !ver || (l.verification ?? 'unverified') === ver)
+      .filter((l) => scope === 'all' || !l.access || (scope === 'mine') === l.access.mine)
       .filter((l) => words.every((w) => lotSearchText(l).includes(w)))
       .sort((a, b) => a.name.localeCompare(b.name, 'zh') || b.updatedAt - a.updatedAt);
-  }, [lots, q, filter, loc, ver]);
+  }, [lots, q, filter, loc, ver, scope]);
   const inStock = (lots ?? []).filter(available).length;
 
   const setStatus = (l: ReagentLot, status: StockStatus) => saveToInventory({ ...l, status }).catch(() => onNotify(t.saveFailed));
@@ -104,6 +109,13 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
               ))}
             </select>
           )}
+          {lots?.some((l) => l.access) && (
+            <select value={scope} onChange={(e) => setScope(e.target.value as typeof scope)} aria-label={t.vis.label}>
+              {(['all', 'mine', 'others'] as const).map((k) => (
+                <option key={k} value={k}>{t.vis[k]}</option>
+              ))}
+            </select>
+          )}
           <select value={ver} onChange={(e) => setVer(e.target.value as Verification | '')} aria-label={t.lots.verification}>
             <option value="">{I.allVerifications}</option>
             {VERIFICATIONS.map((v) => (
@@ -140,6 +152,7 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
                         <div className="inv-sub">
                           {[l.cas && `CAS ${l.cas}`, l.compound?.formula, l.compound?.mw && `MW ${fmt(l.compound.mw, 5)}`].filter(Boolean).join(' · ')}
                         </div>
+                        <AccessBadge access={l.access} />
                       </td>
                       <td className="inv-sub">
                         {[l.spec, l.purity && `${l.purity}%`, (l.molarity ?? l.compound?.molarity) && `${l.molarity ?? l.compound?.molarity} M`].filter(Boolean).join(' · ')}
@@ -150,7 +163,7 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
                       <td className="inv-sub">{l.location}</td>
                       <td className="inv-sub">{[l.remaining, l.quantity && `/ ${l.quantity}`].filter(Boolean).join(' ')}</td>
                       <td>
-                        <select className={'stock-select s-' + (l.status ?? 'in_stock')} value={l.status ?? 'in_stock'} onChange={(e) => setStatus(l, e.target.value as StockStatus)}>
+                        <select className={'stock-select s-' + (l.status ?? 'in_stock')} value={l.status ?? 'in_stock'} disabled={!!l.access && !l.access.canEdit} onChange={(e) => setStatus(l, e.target.value as StockStatus)}>
                           {STOCK_STATUSES.map((s) => (
                             <option key={s} value={s}>{I.statuses[s]}</option>
                           ))}
@@ -217,6 +230,12 @@ function LotForm({ initial, focusSpectra, rd, remote, onClose, onNotify }: LotFo
   const isNew = !initial.name;
   // In the library: a new bottle is saved before its first spectrum is uploaded.
   const [saved, setSaved] = useState(!isNew);
+  // Sharing (server): a new lot starts with the account's default.
+  const me = useAccount();
+  const access = initial.access;
+  const readOnly = !!access && !access.canEdit;
+  const canShare = remote && !!me && (!access || access.canManage);
+  const [vis, setVis] = useState<Visibility | undefined>(access?.visibility ?? me?.prefs.lots);
   const set = (p: Partial<ReagentLot>) => setL((x) => ({ ...x, ...p }));
   const setC = (p: Partial<NonNullable<ReagentLot['compound']>>) => setL((x) => ({ ...x, compound: { ...x.compound, ...p } }));
   const c = l.compound ?? {};
@@ -250,7 +269,8 @@ function LotForm({ initial, focusSpectra, rd, remote, onClose, onNotify }: LotFo
     }
   };
 
-  const store = () => saveToInventory({ ...l, name: l.name.trim(), key: compoundKey(l) });
+  const store = () =>
+    saveToInventory({ ...l, name: l.name.trim(), key: compoundKey(l) }, canShare && vis !== access?.visibility ? vis : undefined);
 
   const save = async () => {
     if (!l.name.trim()) return;
@@ -382,6 +402,7 @@ function LotForm({ initial, focusSpectra, rd, remote, onClose, onNotify }: LotFo
         </label>
         {text('verificationNote', L.verificationNote, L.verificationNotePh, true)}
         {text('note', t.att.noteLabel, '', true)}
+        {readOnly && <p className="readonly-note inv-wide">{t.vis.readOnlyLot.replace('{name}', access?.ownerName ?? t.vis.group)}</p>}
         <LotSpectra
           lotId={l.id}
           remote={remote}
@@ -393,10 +414,12 @@ function LotForm({ initial, focusSpectra, rd, remote, onClose, onNotify }: LotFo
         />
       </div>
       <footer className="row">
-        {saved && <button className="ghost small danger" onClick={remove}>{I.delete}</button>}
+        {saved && (!access || access.canManage) && <button className="ghost small danger" onClick={remove}>{I.delete}</button>}
+        {canShare && vis && <VisibilitySelect value={vis} onChange={setVis} />}
+        {!canShare && access && <AccessBadge access={access} />}
         <span className="grow" />
         <button className="ghost" onClick={onClose}>{I.cancel}</button>
-        <button onClick={save} disabled={busy || !l.name.trim()}>{I.save}</button>
+        {!readOnly && <button onClick={save} disabled={busy || !l.name.trim()}>{I.save}</button>}
       </footer>
     </aside>
   );

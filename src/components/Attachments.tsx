@@ -32,6 +32,8 @@ interface Props {
   /** Saved reaction on the server; attachments need one. */
   reactionId?: string;
   remote: boolean;
+  /** Someone else's reaction shared read-only: files can be seen, not added. */
+  readOnly?: boolean;
   onSave: () => void;
   onNotify: (msg: string) => void;
   /** Node to select and reveal ("lot:<id>", "cmp:<id>" or an attachment id). */
@@ -69,7 +71,7 @@ function initialView(): View {
 }
 
 /** Keyed by the reaction id (see App): each reaction starts with empty state. */
-export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify, focusNode, onFocused, onReagentInfo, onOpenReaction }: Props) {
+export function Attachments({ rxn, setRxn, reactionId, remote, readOnly, onSave, onNotify, focusNode, onFocused, onReagentInfo, onOpenReaction }: Props) {
   const { t } = useI18n();
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [viewing, setViewing] = useState<Attachment | null>(null);
@@ -325,7 +327,7 @@ export function Attachments({ rxn, setRxn, reactionId, remote, onSave, onNotify,
     select: setSelectedId,
   };
 
-  const canUpload = remote && !!reactionId;
+  const canUpload = remote && !!reactionId && !readOnly;
   const has = g.loaded && (allNodes.length > 0 || virtual.some((v) => v.kind === 'lot'));
   const filesUnder = (ids: string[]) => ids.reduce((sum, id) => sum + subtree(ix, id).filter((x) => ix.byId.get(x)?.hasFile).length, 0);
 

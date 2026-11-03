@@ -34,6 +34,7 @@
   - [试剂库与试剂批次](#试剂库与试剂批次)
   - [表征与谱图](#表征与谱图)
   - [报告、导出与备份](#报告导出与备份)
+  - [账号与共享](#账号与共享)
 - [系统架构](#系统架构)
 - [后端接口](#后端接口cloudflare-worker--d1--r2)
 - [本地开发](#本地开发)
@@ -51,7 +52,7 @@
     <td width="25%" valign="top"><img src="docs/images/icons/scheme.svg" width="40" alt=""><br><b>反应式预览</b><br><sub>SMILES / 名称输入，RDKit 本地绘制，试剂条件自动排在箭头上下</sub></td>
     <td width="25%" valign="top"><img src="docs/images/icons/draw.svg" width="40" alt=""><br><b>画结构</b><br><sub>内置 Ketcher 编辑器，画反应、改结构</sub></td>
     <td width="25%" valign="top"><img src="docs/images/icons/export.svg" width="40" alt=""><br><b>ChemDraw 风格导出</b><br><sub>黑白 ACS 1996 样式，SVG / PNG / CDXML / RXN</sub></td>
-    <td width="25%" valign="top"><img src="docs/images/icons/abbr.svg" width="40" alt=""><br><b>化合物缩写</b><br><sub>THF、Boc₂O、SM-1…，全组共享缩写表</sub></td>
+    <td width="25%" valign="top"><img src="docs/images/icons/abbr.svg" width="40" alt=""><br><b>化合物缩写</b><br><sub>THF、Boc₂O、SM-1…，个人缩写表，可共享给全组</sub></td>
   </tr>
   <tr>
     <td valign="top"><img src="docs/images/icons/lookup.svg" width="40" alt=""><br><b>性质查询</b><br><sub>内置约 60 种常用试剂 + PubChem，液体自动查密度</sub></td>
@@ -128,7 +129,7 @@
 **化合物缩写**：每个化合物可以有缩写（如 THF、Boc₂O、SM-1、1a），反应式中写缩写，卡片右上角「缩写 / 全名」切换（导出的 SVG / PNG / CDXML、Word / PDF 报告跟随这个选择）。
 
 - 缩写来源优先级：**本反应中手动填写的**（性质面板「缩写」，只对本反应生效；也可选「不用缩写」）→ **缩写表** → **内置试剂库**（THF、DCM、TEA 等）。
-- **缩写表**（顶栏「缩写表」）：自定义的缩写，服务器可用时全组共享。
+- **缩写表**（顶栏「缩写表」）：自定义的缩写。使用服务器时每人有自己的缩写表，每条可设为仅自己 / 组内只读 / 组内可编辑；同一缩写自己的优先于他人共享的（每人都可以有自己的「SM-1」）。
   - 在性质面板填写缩写后点「存入缩写表」，以后所有反应中的同一化合物（按结构 / CAS / 名称识别）自动使用；
   - 也可在缩写表中新增（从当前反应选择，或按名称 / CAS / SMILES 查询）、修改、删除；
   - 同一缩写只能对应一个化合物，冲突时会提示。
@@ -266,6 +267,25 @@
 
 ---
 
+### 账号与共享
+
+使用服务器存储时，需要登录才能使用。每个人有自己的反应记录、试剂库和缩写表，**每一条都可以单独设置共享范围**：
+
+| 共享范围 | 别人能看到 | 别人能修改 | 适合 |
+|---|---|---|---|
+| **仅自己** | ✗ | ✗ | 未发表的路线、个人草稿 |
+| **组内只读** | ✓ | ✗（反应可「另存为」自己的副本；试剂可直接用于投料） | 给组员参考的反应、自己管理的试剂瓶 |
+| **组内可编辑** | ✓ | ✓ | 公用试剂、公用缩写、合作项目 |
+
+- **第一个账号**：新部署的网站打开后先「创建管理员账号」；之后组员在登录页自行注册（管理员可在「用户管理」中关闭注册，改为由管理员添加账号）。
+- **默认共享范围**：右上角头像 →「账号设置」可分别设置新建反应、试剂、缩写时的默认范围（初始为：反应仅自己，试剂和缩写组内只读）；已有记录在各自位置修改：反应在标题右侧，试剂在编辑面板底部，缩写在表格每行右侧。
+- **只有所有者**可以删除记录、修改共享范围；打开别人只读共享的反应时会提示「只读」，修改后保存会存为自己的副本。附件（谱图）跟随所属反应或试剂的权限。
+- 「已保存的反应」和「试剂库」可按 **全部 / 我的 / 他人共享** 筛选，每条显示所有者和共享范围。
+- **用户管理**（管理员）：查看账号、设为管理员 / 成员、重置密码、停用账号（至少保留一位管理员）。
+- **升级前已有的数据**没有所有者，视为「组内可编辑」的公共数据，所有人都能看到和修改；由管理员负责删除或调整共享范围。
+- 密码以 PBKDF2-SHA256 加盐保存；登录状态为 HttpOnly Cookie（30 天），修改密码后其他设备自动退出。
+- 使用浏览器本地存储时（如 `npm run dev`）没有账号，数据只在本浏览器中。
+
 ## 系统架构
 
 <p align="center">
@@ -280,25 +300,30 @@
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/health` | 健康检查（前端据此选择存储位置） |
-| `GET /api/reactions?q=` | 列表（最近保存在前，可按名称 / CAS / 分子式 / SMILES 搜索） |
-| `POST /api/reactions` | 新建（可带 `id`，用于上传浏览器里已有的反应） |
+| `GET /api/health` | 健康检查（前端据此选择存储位置；无需登录） |
+| `GET /api/auth/me`；`POST /api/auth/{setup,register,login,logout}` | 当前用户；创建首个（管理员）账号、注册、登录、退出（无需登录） |
+| `PUT /api/auth/password`、`PUT /api/auth/profile` | 修改密码；显示名称与默认共享范围 |
+| `GET`、`POST /api/admin/users`；`PATCH /api/admin/users/:id`；`PUT /api/admin/settings` | 管理员：账号列表、添加、修改角色 / 停用 / 重置密码；开放或关闭注册 |
+| `GET /api/reactions?q=&scope=mine` | 列表（自己的和别人共享的，最近保存在前，可按名称 / CAS / 分子式 / SMILES 搜索） |
+| `POST /api/reactions` | 新建（可带 `id`，用于上传浏览器里已有的反应；可带 `visibility`） |
+| `PUT /api/reactions/:id/access` | 修改共享范围 `{ visibility: 'private' \| 'shared' \| 'editable' }`（所有者） |
 | `GET /api/reactions/:id` | 读取 |
 | `PUT /api/reactions/:id` | 更新，需带 `baseVersion`；版本不一致返回 409 和服务器上的当前版本 |
 | `DELETE /api/reactions/:id` | 删除（软删除，数据库中可恢复） |
 | `GET /api/abbrs` | 缩写表 |
-| `POST /api/abbrs`、`PUT /api/abbrs/:id`、`DELETE /api/abbrs/:id` | 新增、修改、删除（软删除）缩写；同一缩写只能对应一个化合物（冲突返回 409 `abbr_taken`），转给另一个化合物时带 `replaces` 在同一事务中删除旧条目 |
+| `POST /api/abbrs`、`PUT /api/abbrs/:id`、`DELETE /api/abbrs/:id` | 新增、修改、删除（软删除）缩写；同一个人的同一缩写只能对应一个化合物（冲突返回 409 `abbr_taken`），转给另一个化合物时带 `replaces` 在同一事务中删除旧条目 |
 | `GET`、`POST /api/lots`；`GET`、`PUT`、`DELETE /api/lots/:id` | 试剂库 / 试剂批次 |
 | `GET`、`POST /api/{reactions,lots}/:id/attachments` | 附件列表、上传（附件属于反应或试剂批次） |
 | `GET`、`PATCH`、`DELETE /api/attachments/:id`；`/file`、`/preview` | 附件信息、下载原文件、缩略图 |
 | `/api/{reactions,lots}/:id/{graph,nodes,links,positions}` | 节点图：读取、新建节点、连线 / 断开、保存位置 |
 
+- 除 `/api/health` 和 `/api/auth/*` 外，所有接口都需要登录（未登录返回 401）；看不到的记录返回 404，能看不能改返回 403。每条记录返回 `access: { visibility, ownerName, mine, canEdit, canManage }`；规则在 `src/storage/access.ts`。
 - 数据库表由 Worker 自动创建和升级（`worker/schema.ts`），部署流程无需额外的迁移步骤；修改表结构时在 `MIGRATIONS` 末尾追加一项即可。
 - 每次保存的完整内容都记录在 `reaction_versions` 表中，便于追溯。
 - 正式部署使用 `reaction-info-db`，PR 预览（`wrangler preview`）使用 `reaction-info-db-preview`，见 `wrangler.toml`。
 
 > [!WARNING]
-> 目前尚未启用登录（Cloudflare Access）：任何知道网址的人都能查看、修改和删除保存在服务器上的反应。在启用 Access 之前，请不要保存敏感数据。
+> 默认允许任何人自行注册：注册后只能看到别人共享的数据，看不到「仅自己」的记录。若网址会被组外人员知道，请在「用户管理」中关闭注册，或再加一层 Cloudflare Access（见下文）。
 
 ## 本地开发
 
@@ -333,7 +358,7 @@ npx wrangler login
 npm run deploy       # 构建并部署
 ```
 
-**仅限课题组访问（可选）**：在 Cloudflare Zero Trust → Access → Applications 中为该 Worker 的域名添加一个应用，策略设置为允许指定邮箱（或邮箱域名）登录。50 人以内免费。
+**仅限课题组访问（可选，在网站自带的账号之外再加一层）**：在 Cloudflare Zero Trust → Access → Applications 中为该 Worker 的域名添加一个应用，策略设置为允许指定邮箱（或邮箱域名）登录。50 人以内免费。
 
 ## 目录结构
 
@@ -365,7 +390,9 @@ src/
     refs.ts            参考文献格式化与 Crossref 解析
     runs.ts            多次实验：当前实验的数据在反应顶层，其余实验存于 runs[]，切换时交换
   components/          界面组件
-    AppBar.tsx           顶栏（存储位置、已保存的反应、试剂库、缩写表、新建、语言）
+    AppBar.tsx           顶栏（存储位置、已保存的反应、试剂库、缩写表、新建、账号、语言）
+    Auth.tsx             登录 / 注册 / 创建管理员页面，会话过期时的重新登录窗口
+    Account.tsx          账号菜单、账号设置、用户管理，共享范围选择与标签
     DocHead.tsx          反应标题、编号、保存 / 另存为 / 下载
     SchemeCard.tsx       反应式卡片（显示与导出工具、导入 / 添加化合物）
     ReactionPreview.tsx  反应式预览（彩色 / 黑白）
@@ -397,7 +424,9 @@ src/
     importTable.ts     Excel / CSV 库存表解析与表头识别
   office/              Word (.docx) / Excel (.xlsx) 导出（手写 OOXML，按需加载）
   storage/             存储层
-    http.ts            访问本应用接口的 JSON 请求与错误（HttpError）
+    http.ts            访问本应用接口的 JSON 请求与错误（HttpError）；401 时提示重新登录
+    access.ts          共享范围与权限规则（前端与 Worker 共用）
+    auth.ts            登录、注册、账号设置、用户管理接口客户端
     collection.ts      试剂库、缩写表共用：服务器 / 浏览器存储 + 页面共享缓存
     lots.ts / inventory.ts / abbrs.ts  试剂库与缩写表（基于 collection.ts）
     types.ts           ReactionRepo 接口（list / get / create / update(带版本) / remove）
@@ -410,7 +439,8 @@ src/
     backup.ts          全部数据备份与恢复
     draft.ts / files.ts / ids.ts  草稿、.json 文件、UUID
 worker/
-  index.ts             API 路由（/api/*），其余请求交给静态资源
+  index.ts             API 路由（/api/*），其余请求交给静态资源；除 health / auth 外需要登录
+  auth.ts              账号、密码（PBKDF2）、会话 Cookie、用户管理
   schema.ts            数据库表结构与自动迁移
   reactions.ts         反应接口
   abbrs.ts             缩写表接口
@@ -440,5 +470,5 @@ docs/images/           README 使用的截图、图标与示意图
 
 - [ ] ChemDraw 粘贴（CDXML，代码已具备）
 - [ ] 自动配平检查
-- [ ] 登录与权限（Cloudflare Access）
+- [x] 登录与权限（账号、个人数据、按条共享）
 - [ ] 常用反应模板（Suzuki、酰胺缩合、格氏反应等）

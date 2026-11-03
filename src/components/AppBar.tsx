@@ -2,6 +2,7 @@
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
 import type { useSavedDoc } from '../storage/useSavedDoc';
+import { AccountMenu } from './Account';
 import { SavedMenu } from './SavedMenu';
 
 interface Props {
@@ -73,6 +74,7 @@ export function AppBar({ storage, doc, confirmDiscard, onSwitched, onNotify, onO
           >
             {t.newReaction}
           </button>
+          {remote && <AccountMenu onNotify={onNotify} />}
           <div className="lang" role="group" aria-label="Language">
             <button className={lang === 'zh' ? 'on' : ''} onClick={() => setLang('zh')}>中文</button>
             <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button>
