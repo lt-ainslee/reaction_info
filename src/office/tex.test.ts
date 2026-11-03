@@ -5,7 +5,7 @@ import { en } from '../i18n/en';
 import { newComponent, type Reaction } from '../chem/stoich';
 import { withRuns, updateRun } from '../chem/runs';
 import { DEFAULT_UNITS } from '../units';
-import { procedureTex, tex, texFileName, texName, texReport } from './tex';
+import { procedureTex, tableGrid, tex, texFileName, texName, texReport } from './tex';
 
 /** A reaction with everything the record can show, including LaTeX-hostile text. */
 export function sample(): Reaction {
@@ -56,6 +56,7 @@ export function sample(): Reaction {
           attrs: { start: 3 },
           content: [
             { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '加入 5 mL 溶剂 & 搅拌' }] }] },
+            { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: '[Ru(bpy)3]Cl2 (1 mol%) was added' }] }] },
             {
               type: 'listItem',
               content: [
@@ -86,6 +87,15 @@ export function sample(): Reaction {
             { type: 'text', text: 'heat to 120 °C', marks: [{ type: 'strike' }, { type: 'bold' }] },
           ],
         },
+        {
+          type: 'table',
+          content: [
+            { type: 'tableRow', content: ['组分', '用量', '备注'].map((x) => ({ type: 'tableHeader', content: [{ type: 'paragraph', content: [{ type: 'text', text: x }] }] })) },
+            { type: 'tableRow', content: [{ type: 'tableCell', attrs: { colspan: 2 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: '合并两列' }] }] }, { type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'x' }] }] }] },
+            { type: 'tableRow', content: [{ type: 'tableCell', attrs: { rowspan: 2 }, content: [{ type: 'paragraph', content: [{ type: 'text', text: '跨两行' }] }] }, ...['1', '2'].map((x) => ({ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: x }] }] }))] },
+            { type: 'tableRow', content: ['3', '4'].map((x) => ({ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: x }] }] })) },
+          ],
+        },
         { type: 'paragraph', content: [{ type: 'text', text: '见 ' }, { type: 'text', text: '文献', marks: [{ type: 'link', attrs: { href: 'https://example.org/a_b%20c#x' } }] }] },
       ],
     },
@@ -112,6 +122,9 @@ describe('LaTeX export', () => {
     expect(out).toContain('\\begin{card}[现象]');
     expect(out).toContain('HRMS found:\\\\{}\n[M+H]'); // a [ after \\ is not its optional argument
     expect(out).toContain('\\kstrike{加入 2.0 equiv 碱}');
+    expect(out).toContain('\\item{} [Ru(bpy)3]Cl2'); // not the item's label
+    expect(out).toContain('\\SetCell[r=1,c=2]{l} {合并两列} & {} & {x} \\\\');
+    expect(out).toContain('\\SetCell[r=2,c=1]{l} {跨两行} & {1} & {2} \\\\\n{} & {3} & {4} \\\\');
     expect(out).toContain('\\textbf{\\kstrike{heat to 120 °C}}');
     expect(out).toContain('N\\textsubscript{2}');
     expect(out).toContain('\\href{https://example.org/a_b\\%20c\\#x}{文献}');
@@ -187,5 +200,24 @@ describe('English record', () => {
     expect(out).not.toContain('\\renewcommand\\tbc');
     expect(texReport({ rxn: { ...sample(), procedure: undefined, notes: 'x' }, units: DEFAULT_UNITS, t: zh, scheme: null })).not.toContain('kstrike');
     expect(out).toContain('状态：完成');
+  });
+});
+
+describe('tableGrid', () => {
+  const c = (text: string, attrs?: Record<string, unknown>) => ({ type: 'tableCell', attrs, content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
+  it('keeps cells in their columns around merged cells', () => {
+    const grid = tableGrid({
+      type: 'table',
+      content: [
+        { type: 'tableRow', content: [c('a', { rowspan: 2, colspan: 2 }), c('b')] },
+        { type: 'tableRow', content: [c('c')] },
+        { type: 'tableRow', content: [c('d'), c('e'), c('f')] },
+      ],
+    });
+    expect(grid).toEqual([
+      ['\\SetCell[r=2,c=2]{l} a', '', 'b'],
+      ['', '', 'c'],
+      ['d', 'e', 'f'],
+    ]);
   });
 });

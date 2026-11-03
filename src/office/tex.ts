@@ -98,6 +98,39 @@ function inline(n: PNode): string {
 /** One table cell: paragraphs joined by spaces (a cell is one line in ktable). */
 const cellText = (n: PNode) => (n.content ?? []).map((p) => inline(p).replace(/\\\\\{\}\n/g, ' ')).join(' ');
 
+const span = (v: unknown) => {
+  const x = Math.trunc(Number(v));
+  return Number.isFinite(x) && x > 1 ? Math.min(x, 50) : 1;
+};
+
+/**
+ * A table's cells on their logical grid: a merged cell (colspan / rowspan)
+ * becomes tabularray's \SetCell[r=…,c=…] and the positions it covers stay
+ * empty, so later cells keep their columns.
+ */
+export function tableGrid(table: PNode): string[][] {
+  const grid: string[][] = [];
+  const taken: boolean[][] = [];
+  (table.content ?? []).forEach((row, r) => {
+    grid[r] ??= [];
+    taken[r] ??= [];
+    let c = 0;
+    for (const cell of row.content ?? []) {
+      while (taken[r][c]) c++;
+      const cs = span(cell.attrs?.colspan);
+      const rs = span(cell.attrs?.rowspan);
+      for (let i = 0; i < rs; i++)
+        for (let j = 0; j < cs; j++) {
+          (taken[r + i] ??= [])[c + j] = true;
+          (grid[r + i] ??= [])[c + j] = '';
+        }
+      grid[r][c] = (cs > 1 || rs > 1 ? `\\SetCell[r=${rs},c=${cs}]{l} ` : '') + cellText(cell);
+      c += cs;
+    }
+  });
+  return grid.map((r) => Array.from(r, (x) => x ?? ''));
+}
+
 /** A paragraph's text without line breaks at its ends (LaTeX rejects those). */
 const para = (n: PNode) => inline(n).replace(/^(\s|\\\\\{\})+|(\s|\\\\\{\})+$/g, '');
 
@@ -114,7 +147,8 @@ export function procedureTex(doc: PNode, observation: string): string {
         const env = n.type === 'orderedList' ? 'enumerate' : 'itemize';
         const start = Math.trunc(Number(n.attrs?.start ?? 1));
         const opt = env === 'enumerate' && Number.isFinite(start) && start !== 1 ? `[start=${start}]` : '';
-        const items = (n.content ?? []).map((li) => `  \\item ${blocks(li.content) || '~'}`);
+        // \item{} so a step starting with "[Ru(bpy)3]…" is not read as the item's label.
+        const items = (n.content ?? []).map((li) => `  \\item{} ${blocks(li.content) || '~'}`);
         return items.length ? `\\begin{${env}}${opt}\n${items.join('\n')}\n\\end{${env}}` : '';
       }
       case 'blockquote':
@@ -124,7 +158,7 @@ export function procedureTex(doc: PNode, observation: string): string {
       case 'horizontalRule':
         return '\\noindent{\\color{border}\\rule{\\linewidth}{0.4pt}}';
       case 'table': {
-        const rows = (n.content ?? []).map((r) => (r.content ?? []).map(cellText));
+        const rows = tableGrid(n);
         const cols = Math.max(0, ...rows.map((r) => r.length));
         if (!cols) return '';
         // ktable styles row 1 as the header; without one, start with an empty row.
@@ -198,7 +232,12 @@ const STRIKE = String.raw`% \kstrike: strikethrough
 /** A Kami table: rows of LaTeX cells (row 1 = header), each cell braced so "[" or "," are safe. */
 function ktable(colspec: string, rows: string[][], title?: string): string {
   const cols = rows[0]?.length ?? 0;
-  const line = (r: string[]) => Array.from({ length: cols }, (_, i) => `{${r[i] ?? ''}}`).join(' & ') + ' \\\\';
+  // \SetCell (merged cells) has to start the cell, outside the braces.
+  const cell = (x = '') => {
+    const m = /^(\\SetCell\[[^\]]*\]\{l\}) ([\s\S]*)$/.exec(x);
+    return m ? `${m[1]} {${m[2]}}` : `{${x}}`;
+  };
+  const line = (r: string[]) => Array.from({ length: cols }, (_, i) => cell(r[i])).join(' & ') + ' \\\\';
   const env = rows.length <= KEEP_ROWS ? 'keeptable' : 'ktable';
   return [
     ...(title ? [`\\tabletitle{${title}}`] : []),
