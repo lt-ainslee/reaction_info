@@ -77,13 +77,15 @@ const url = (u: string) => `\\href{${u.replace(/[\\{}%#]/g, (c) => `\\${c}`)}}{\
 // ---- procedure (Tiptap JSON) → LaTeX ----
 
 function inline(n: PNode): string {
-  if (n.type === 'hardBreak') return '\\\\\n';
+  // \\{} so a following [ ("[M+H]+") is not read as \\'s optional spacing argument.
+  if (n.type === 'hardBreak') return '\\\\{}\n';
   if (n.type !== 'text') return (n.content ?? []).map(inline).join('');
   let out = tex(n.text);
   for (const m of n.marks ?? []) {
     if (m.type === 'bold') out = `\\textbf{${out}}`;
     else if (m.type === 'italic') out = `\\textit{${out}}`;
     else if (m.type === 'underline') out = `\\underline{${out}}`;
+    else if (m.type === 'strike') out = `\\kstrike{${out}}`;
     else if (m.type === 'subscript') out = `\\textsubscript{${out}}`;
     else if (m.type === 'superscript') out = `\\textsuperscript{${out}}`;
     else if (m.type === 'link' && typeof m.attrs?.href === 'string' && /^(https?:|mailto:)/i.test(m.attrs.href)) {
@@ -94,10 +96,10 @@ function inline(n: PNode): string {
 }
 
 /** One table cell: paragraphs joined by spaces (a cell is one line in ktable). */
-const cellText = (n: PNode) => (n.content ?? []).map((p) => inline(p).replace(/\\\\\n/g, ' ')).join(' ');
+const cellText = (n: PNode) => (n.content ?? []).map((p) => inline(p).replace(/\\\\\{\}\n/g, ' ')).join(' ');
 
 /** A paragraph's text without line breaks at its ends (LaTeX rejects those). */
-const para = (n: PNode) => inline(n).replace(/^(\s|\\\\)+|(\s|\\\\)+$/g, '');
+const para = (n: PNode) => inline(n).replace(/^(\s|\\\\\{\})+|(\s|\\\\\{\})+$/g, '');
 
 export function procedureTex(doc: PNode, observation: string): string {
   const blocks = (ns: PNode[] | undefined): string => (ns ?? []).map(block).filter(Boolean).join('\n\n');
@@ -106,7 +108,7 @@ export function procedureTex(doc: PNode, observation: string): string {
       case 'paragraph':
         return para(n);
       case 'heading':
-        return `\\subsection{${inline(n).replace(/\\\\\n/g, ' ')}}`;
+        return `\\subsection{${inline(n).replace(/\\\\\{\}\n/g, ' ')}}`;
       case 'bulletList':
       case 'orderedList': {
         const env = n.type === 'orderedList' ? 'enumerate' : 'itemize';
@@ -185,6 +187,14 @@ const ENGLISH = String.raw`% English labels (kamidoc.cls has them in Chinese)
   {\endlist}
 \makeatother`;
 
+/** Preamble when the procedure has struck-through text: CJKsout breaks lines inside Chinese (xelatex), ulem otherwise. */
+const STRIKE = String.raw`% \kstrike: strikethrough
+\ifXeTeX
+  \usepackage{xeCJKfntef}\newcommand\kstrike[1]{\CJKsout{#1}}
+\else
+  \usepackage[normalem]{ulem}\newcommand\kstrike[1]{\sout{#1}}
+\fi`;
+
 /** A Kami table: rows of LaTeX cells (row 1 = header), each cell braced so "[" or "," are safe. */
 function ktable(colspec: string, rows: string[][], title?: string): string {
   const cols = rows[0]?.length ?? 0;
@@ -239,7 +249,7 @@ export function texReport({ rxn, units, t, lots, scheme, today }: TexInput): str
   const sub = [code && `${u(t.runs.runCode)} ${u(code)}`, rxn.conditions && u(rxn.conditions)].filter(Boolean);
   if (sub.length) L.push(`\\subtitle{${sub.join('\\sep ')}}`);
   L.push(`\\meta{${[u(date), rxn.operator && u(rxn.operator), colon(t.runs.status, u(t.runs.statuses[run.status]))].filter(Boolean).join('\\sep ')}}`);
-  if (best) L.push(`\\headfigure{${fmt(best.v.yieldPct, 3)}\\%}{${u(t.yield)}\\\\${u(nameWithAbbr(best.c))}}`);
+  if (best) L.push(`\\headfigure{${fmt(best.v.yieldPct, 3)}\\%}{${u(t.yield)}\\\\{}${u(nameWithAbbr(best.c))}}`);
   L.push('', `% ${k.keepNote}`, KEEPTABLE, '');
   if (k.lang === 'en') L.push(ENGLISH, '');
   L.push('\\begin{document}', '\\makeheader', '');
@@ -372,7 +382,9 @@ export function texReport({ rxn, units, t, lots, scheme, today }: TexInput): str
   }
 
   L.push('\\end{document}', '');
-  return L.join('\n');
+  const out = L.join('\n');
+  // Strikethrough (crossed-out steps) only loads its package when used.
+  return out.includes('\\kstrike{') ? out.replace('\n\\begin{document}', `\n${STRIKE}\n\n\\begin{document}`) : out;
 }
 
 /** Name of the .tex file: the run code when it is a safe file name, else "report". */

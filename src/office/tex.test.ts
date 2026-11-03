@@ -75,6 +75,17 @@ export function sample(): Reaction {
             { type: 'tableRow', content: ['[PE/EA] 20:1', '0.40', '15–28'].map((x) => ({ type: 'tableCell', content: [{ type: 'paragraph', content: [{ type: 'text', text: x }] }] })) },
           ],
         },
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'HRMS found:' },
+            { type: 'hardBreak' },
+            { type: 'text', text: '[M+H]⁺ 185.0960；原计划 ' },
+            { type: 'text', text: '加入 2.0 equiv 碱', marks: [{ type: 'strike' }] },
+            { type: 'text', text: ' ' },
+            { type: 'text', text: 'heat to 120 °C', marks: [{ type: 'strike' }, { type: 'bold' }] },
+          ],
+        },
         { type: 'paragraph', content: [{ type: 'text', text: '见 ' }, { type: 'text', text: '文献', marks: [{ type: 'link', attrs: { href: 'https://example.org/a_b%20c#x' } }] }] },
       ],
     },
@@ -99,6 +110,9 @@ describe('LaTeX export', () => {
     const out = procedureTex(sample().procedure!, '现象');
     expect(out).toContain('\\begin{enumerate}[start=3]');
     expect(out).toContain('\\begin{card}[现象]');
+    expect(out).toContain('HRMS found:\\\\{}\n[M+H]'); // a [ after \\ is not its optional argument
+    expect(out).toContain('\\kstrike{加入 2.0 equiv 碱}');
+    expect(out).toContain('\\textbf{\\kstrike{heat to 120 °C}}');
     expect(out).toContain('N\\textsubscript{2}');
     expect(out).toContain('\\href{https://example.org/a_b\\%20c\\#x}{文献}');
     expect(out).toContain('90 °C。\n\n\\begin{enumerate}'); // trailing line break dropped
@@ -109,6 +123,7 @@ describe('LaTeX export', () => {
     const out = texReport({ rxn: r, units: DEFAULT_UNITS, t: zh, scheme: { file: 'scheme.png', widthPt: 300 } });
     expect(out).toContain('\\documentclass{kamidoc}');
     expect(out).toContain('\\headfigure{84.7\\%}');
+    expect(out).toContain('\\usepackage{xeCJKfntef}');
     expect(out).toContain('\\includegraphics[width=300.0pt]{scheme.png}');
     expect(out).toContain('\\warnbadge{');
     expect(out).toContain('\\begin{keeptable}');
@@ -126,6 +141,11 @@ describe('LaTeX export', () => {
       const longTex = texReport({ rxn: long, units: DEFAULT_UNITS, t: zh, scheme: { file: 'scheme.png', widthPt: 300 } });
       expect(longTex).toContain('\\begin{ktable}');
       writeFileSync(`${process.env.TEX_OUT}/long.tex`, longTex);
+      const ru = sample();
+      ru.components = ru.components.map((c) => (c.role === 'product' ? { ...c, name: '[Ru(bpy)3]Cl2', abbr: '' } : c));
+      const ruTex = texReport({ rxn: ru, units: DEFAULT_UNITS, t: zh, scheme: null });
+      expect(ruTex).toContain('\\\\{}[Ru(bpy)3]Cl2}');
+      writeFileSync(`${process.env.TEX_OUT}/bracket.tex`, ruTex);
       const empty: Reaction = { title: '', refId: null, refMmol: 0, components: [] };
       writeFileSync(`${process.env.TEX_OUT}/empty.tex`, texReport({ rxn: empty, units: DEFAULT_UNITS, t: zh, scheme: null }));
     }
@@ -165,6 +185,7 @@ describe('English record', () => {
   it('leaves the Chinese record to the class labels', () => {
     const out = texReport({ rxn: sample(), units: DEFAULT_UNITS, t: zh, scheme: null });
     expect(out).not.toContain('\\renewcommand\\tbc');
+    expect(texReport({ rxn: { ...sample(), procedure: undefined, notes: 'x' }, units: DEFAULT_UNITS, t: zh, scheme: null })).not.toContain('kstrike');
     expect(out).toContain('状态：完成');
   });
 });
