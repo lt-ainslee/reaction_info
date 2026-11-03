@@ -79,8 +79,9 @@ export function procedureBlocks(doc: PNode, observation: string): Block[] {
         return;
       case 'table': {
         const rows = (n.content ?? []).map((row) => (row.content ?? []).map((cell) => (cell.content ?? []).flatMap((x, i) => [...(i ? [{ text: '\n' }] : []), ...runsOfInline(x)])));
+        const spans = (n.content ?? []).map((row) => (row.content ?? []).map((cell) => ({ colspan: Number(cell.attrs?.colspan ?? 1), rowspan: Number(cell.attrs?.rowspan ?? 1) })));
         const header = n.content?.[0]?.content?.every((c) => c.type === 'tableHeader') ?? false;
-        out.push({ kind: 'table', rows, header });
+        out.push({ kind: 'table', rows, spans, header });
         return;
       }
       default:

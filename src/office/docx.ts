@@ -1,5 +1,6 @@
 // Minimal .docx writer: paragraphs (with bold / italic / sub- / superscript
 // runs), tables and one kind of image, A4 page.
+import { tableGrid, type CellSpan } from './grid';
 import { pack, x, XML_HEAD } from './xml';
 
 export interface Run {
@@ -19,7 +20,19 @@ export type Style = 'Title' | 'Heading1' | 'Heading2' | 'Heading3' | 'Small' | '
 
 export type Block =
   | { kind: 'p'; runs: Run[]; style?: Style; indent?: number; hanging?: number; shade?: 'note' | 'obs'; align?: 'center' | 'right'; keepNext?: boolean }
-  | { kind: 'table'; rows: Run[][][]; header?: boolean; widths?: number[]; align?: ('left' | 'right')[]; small?: boolean }
+  | {
+      kind: 'table';
+      /** Physical cells per row, in source order (cells covered by a merge are left out). */
+      rows: Run[][][];
+      /** Row / column spans, same shape as `rows`; omitted means 1 × 1. */
+      spans?: (CellSpan | undefined)[][];
+      header?: boolean;
+      /** Per grid column. */
+      widths?: number[];
+      /** Per grid column. */
+      align?: ('left' | 'right')[];
+      small?: boolean;
+    }
   | { kind: 'image'; png: Uint8Array; width: number; height: number };
 
 export const p = (text: string | Run[], opts: Omit<Extract<Block, { kind: 'p' }>, 'kind' | 'runs'> = {}): Block => ({
@@ -67,24 +80,51 @@ function para(b: Extract<Block, { kind: 'p' }>): string {
 }
 
 function table(b: Extract<Block, { kind: 'table' }>): string {
-  const cols = b.rows[0]?.length ?? 0;
+  const { cells, cols } = tableGrid(b.rows.map((r, ri) => r.map((_, ci) => b.spans?.[ri]?.[ci] ?? {})));
   const widths = b.widths ?? Array.from({ length: cols }, () => Math.floor(9000 / Math.max(cols, 1)));
-  const grid = `<w:tblGrid>${widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
+  const grid = `<w:tblGrid>${Array.from({ length: cols }, (_, i) => `<w:gridCol w:w="${widths[i] ?? 0}"/>`).join('')}</w:tblGrid>`;
+  // Which source cell covers each grid position.
+  const owner: ({ ri: number; ci: number } | undefined)[][] = b.rows.map(() => []);
+  cells.forEach((row, ri) =>
+    row.forEach((g, ci) => {
+      for (let r = g.r; r < g.r + g.rowspan; r++) for (let c = g.c; c < g.c + g.colspan; c++) owner[r][c] = { ri, ci };
+    }),
+  );
+  const style = `<w:pStyle w:val="${b.small ? 'TableSmall' : 'Table'}"/>`;
+  const tc = (c: number, colspan: number, merge: string, shade: string, jc: string, content: string) => {
+    const w = widths.slice(c, c + colspan).reduce((a, v) => a + v, 0);
+    return (
+      `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${colspan > 1 ? `<w:gridSpan w:val="${colspan}"/>` : ''}${merge}${shade}</w:tcPr>` +
+      `<w:p><w:pPr>${style}${jc}</w:pPr>${content}</w:p></w:tc>`
+    );
+  };
   const rows = b.rows
-    .map((r, ri) => {
-      const head = b.header && ri === 0;
-      const cells = r
-        .map((runs, ci) => {
-          const jc = b.align?.[ci] === 'right' ? '<w:jc w:val="right"/>' : '';
-          const style = `<w:pStyle w:val="${b.small ? 'TableSmall' : 'Table'}"/>`;
+    .map((_, r) => {
+      const head = b.header && r === 0;
+      const shade = head ? '<w:shd w:val="clear" w:color="auto" w:fill="EDF2FD"/>' : '';
+      let out = '';
+      for (let c = 0; c < cols; ) {
+        const o = owner[r][c];
+        if (!o) {
+          // Ragged row: pad with an empty cell.
+          out += tc(c, 1, '', shade, '', '');
+          c++;
+          continue;
+        }
+        const g = cells[o.ri][o.ci];
+        const jc = b.align?.[c] === 'right' ? '<w:jc w:val="right"/>' : '';
+        if (g.r === r) {
+          const runs = b.rows[o.ri][o.ci];
           const content = (head ? runs.map((x) => ({ ...x, b: true })) : runs).map(run).join('');
-          return (
-            `<w:tc><w:tcPr><w:tcW w:w="${widths[ci] ?? 0}" w:type="dxa"/>${head ? '<w:shd w:val="clear" w:color="auto" w:fill="EDF2FD"/>' : ''}</w:tcPr>` +
-            `<w:p><w:pPr>${style}${jc}</w:pPr>${content}</w:p></w:tc>`
-          );
-        })
-        .join('');
-      return `<w:tr>${head ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${cells}</w:tr>`;
+          out += tc(c, g.colspan, g.rowspan > 1 ? '<w:vMerge w:val="restart"/>' : '', shade, jc, content);
+        } else {
+          // Continuation of a cell merged down from a row above.
+          const s = b.header && g.r === 0 ? '<w:shd w:val="clear" w:color="auto" w:fill="EDF2FD"/>' : '';
+          out += tc(c, g.colspan, '<w:vMerge/>', s, jc, '');
+        }
+        c += g.colspan;
+      }
+      return `<w:tr>${head ? '<w:trPr><w:tblHeader/></w:trPr>' : ''}${out}</w:tr>`;
     })
     .join('');
   return (
