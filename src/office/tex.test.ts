@@ -111,11 +111,21 @@ describe('LaTeX export', () => {
     expect(out).toContain('\\headfigure{84.7\\%}');
     expect(out).toContain('\\includegraphics[width=300.0pt]{scheme.png}');
     expect(out).toContain('\\warnbadge{');
+    expect(out).toContain('\\begin{keeptable}');
+    expect(out).not.toContain('\\begin{ktable}');
     expect(out).toContain('\\bibitem{ref1}');
     expect(texFileName(r)).toBe('LT-042-1');
     if (process.env.TEX_OUT) {
       writeFileSync(`${process.env.TEX_OUT}/zh.tex`, out);
       writeFileSync(`${process.env.TEX_OUT}/en.tex`, texReport({ rxn: r, units: DEFAULT_UNITS, t: en, scheme: { file: 'scheme.png', widthPt: 600 } }));
+      const long = sample();
+      long.components = [
+        ...long.components,
+        ...Array.from({ length: 12 }, (_, i) => ({ ...newComponent({ name: `Additive ${i + 1} (long name to wrap in the column)`, role: 'reagent', mw: 100 + i, equiv: 0.1 }), id: `x${i}` })),
+      ];
+      const longTex = texReport({ rxn: long, units: DEFAULT_UNITS, t: zh, scheme: { file: 'scheme.png', widthPt: 300 } });
+      expect(longTex).toContain('\\begin{ktable}');
+      writeFileSync(`${process.env.TEX_OUT}/long.tex`, longTex);
       const empty: Reaction = { title: '', refId: null, refMmol: 0, components: [] };
       writeFileSync(`${process.env.TEX_OUT}/empty.tex`, texReport({ rxn: empty, units: DEFAULT_UNITS, t: zh, scheme: null }));
     }

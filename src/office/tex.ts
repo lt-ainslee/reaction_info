@@ -139,15 +139,39 @@ export function procedureTex(doc: PNode, observation: string): string {
 
 // ---- tables ----
 
+/** Tables up to this many rows (header included) stay on one page; longer ones split with the header repeated. */
+export const KEEP_ROWS = 10;
+
+/**
+ * Preamble: `keeptable`, a ktable that never splits. kamidoc's ktable is a
+ * longtblr, which breaks across pages even when its height estimate says it
+ * fits (wrapped rows are taller than the estimate); this one is a tblr in a
+ * box, with the same styling and the pending table title.
+ */
+const KEEPTABLE = String.raw`% keeptable：与 ktable 样式相同、不拆页的表格（不超过 10 行时使用；更长的表格用 ktable 跨页并重复表头）
+\makeatletter
+\SetTblrInner[tblr]{
+  width=\linewidth, rowsep=3.6pt, colsep=7pt,
+  hline{2}={0.6pt,border}, hline{3-Z}={0.25pt,border},
+  row{1}={font=\small\bfseries, fg=darkwarm},
+  cells={font=\small},
+  column{1}={leftsep=0pt}, column{Z}={rightsep=0pt},
+}
+\NewDocumentEnvironment{keeptable}{m +b}
+  {\par\noindent\begin{minipage}{\linewidth}\kami@puttabletitle
+   \begin{tblr}{#1}#2\end{tblr}\end{minipage}\par\vspace{4pt}}{}
+\makeatother`;
+
 /** A Kami table: rows of LaTeX cells (row 1 = header), each cell braced so "[" or "," are safe. */
 function ktable(colspec: string, rows: string[][], title?: string): string {
   const cols = rows[0]?.length ?? 0;
   const line = (r: string[]) => Array.from({ length: cols }, (_, i) => `{${r[i] ?? ''}}`).join(' & ') + ' \\\\';
+  const env = rows.length <= KEEP_ROWS ? 'keeptable' : 'ktable';
   return [
     ...(title ? [`\\tabletitle{${title}}`] : []),
-    `\\begin{ktable}{colspec={${colspec}}}`,
+    `\\begin{${env}}{colspec={${colspec}}}`,
     ...rows.map(line),
-    '\\end{ktable}',
+    `\\end{${env}}`,
   ].join('\n');
 }
 
@@ -193,7 +217,7 @@ export function texReport({ rxn, units, t, lots, scheme, today }: TexInput): str
   if (sub.length) L.push(`\\subtitle{${sub.join('\\sep ')}}`);
   L.push(`\\meta{${[u(date), rxn.operator && u(rxn.operator), `${u(t.runs.status)}：${u(t.runs.statuses[run.status])}`].filter(Boolean).join('\\sep ')}}`);
   if (best) L.push(`\\headfigure{${fmt(best.v.yieldPct, 3)}\\%}{${u(t.yield)}\\\\${u(nameWithAbbr(best.c))}}`);
-  L.push('', '\\begin{document}', '\\makeheader', '');
+  L.push('', KEEPTABLE, '', '\\begin{document}', '\\makeheader', '');
 
   // Result first.
   L.push(`\\keyline{${u(k.result)}}{${run.conclusion ? u(run.conclusion) : `\\tbc{${u(k.tbcResult)}}`}}`, '');
