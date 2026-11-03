@@ -31,15 +31,16 @@ export function useExports({ rxn, shown, units, rd, labels, reportLook, notify }
   const [building, setBuilding] = useState(false);
   const fileBase = fileBaseOf(rxn);
 
-  /** Word report / Excel workbook of the reaction (generator loaded on demand). */
-  const exportOffice = async (kind: 'word' | 'excel') => {
+  /** Word report / Excel workbook / LaTeX record (zip) of the reaction (generators loaded on demand). */
+  const exportOffice = async (kind: 'word' | 'excel' | 'tex') => {
     setBuilding(true);
     try {
-      const [m, lib] = await Promise.all([import('../office/report'), lotRepo.list().catch(() => [])]);
+      const [m, lib] = await Promise.all([kind === 'tex' ? import('../office/texZip') : import('../office/report'), lotRepo.list().catch(() => [])]);
       const used = new Set(runsOf(rxn).flatMap((r) => r.data.components.map((c) => c.lot?.lotId).filter(Boolean)));
       const lots = new Map(lib.filter((l) => used.has(l.id)).map((l) => [l.id, l]));
       const input = { rxn: shown, units, t, rd, lots, labels, look: reportLook };
-      if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
+      if ('texZip' in m) saveBlob(await m.texZip(input), `${fileBase} LaTeX.zip`);
+      else if (kind === 'word') saveBlob(await m.wordReport(input), `${fileBase}.docx`);
       else saveBlob(m.excelWorkbook(input), `${fileBase}.xlsx`);
     } catch (e) {
       console.error(e);

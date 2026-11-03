@@ -84,7 +84,7 @@
 3. **计算投料**：选一个基准物，改任意一个数，其余自动联动。
 4. **记录实验**：填写日期、状态、实际称量、实验步骤和结论；同一路线可新建多次实验。
 5. **上传谱图**：拖入 Bruker 文件夹或 MNova / PDF，自动挂到对应样品下。
-6. **导出报告**：PDF、Word、Excel，或把反应式导出为 ChemDraw 文件。
+6. **导出报告**：PDF、Word、Excel、LaTeX，或把反应式导出为 ChemDraw 文件。
 
 ---
 
@@ -258,6 +258,12 @@
 - Word 报告：反应式图片、投料表、试剂信息、产物、实验步骤（含上下标与「现象」块）、表征数据、参考文献；
 - Excel 工作簿：当前投料、各次实验对比、试剂批次、文献。
 
+**LaTeX**（投料表卡片上的「LaTeX」按钮）
+
+- 导出 zip：`<实验编号>.tex`、`kamidoc.cls`（Kami 样式）、`scheme.png`（透明底，tex 中引用）和 `scheme.svg`（矢量原图）；
+- 按「实验记录」结构：产率、结论、规模与产量 → 目的 → 反应式 → 试剂与材料 / 试剂信息表 → 步骤（含「现象」卡片、列表、表格）→ 结果与表征 → 分析与下一步 → 参考文献；缺的内容以【待确认：…】标出；
+- 用 `xelatex` 编译两遍（需要 ctex）。
+
 **全部数据备份**：「已保存的反应」菜单中可导出全部反应、试剂库和缩写表为一个 JSON 文件（谱图文件不包含，保留在 R2），并可从备份恢复（只添加缺少的，不覆盖）；也能读取浏览器版衍生版本的备份。
 
 </td>
@@ -344,7 +350,7 @@ npm run deploy       # 构建并部署
 src/
   App.tsx, main.tsx    应用入口（页面骨架与状态连接）
   app/                 App 用到的 hook：偏好设置（prefs.ts）、RDKit 加载、提示、存储位置与建议编号、
-                       添加/导入化合物、保存、导出（Word / Excel / SVG / PNG / CDXML / RXN）
+                       添加/导入化合物、保存、导出（Word / Excel / LaTeX / SVG / PNG / CDXML / RXN）
   i18n/                中英文文案（zh.ts、en.ts）与语言切换（index.tsx）
   styles/              样式，按功能分文件，index.css 按层叠顺序引入
   useAutoLookup.ts     后台查询物态与密度
@@ -395,7 +401,7 @@ src/
                        picked.ts 选择 / 拖入的文件与文件夹
   inventory/
     importTable.ts     Excel / CSV 库存表解析与表头识别
-  office/              Word (.docx) / Excel (.xlsx) 导出（手写 OOXML，按需加载）
+  office/              Word (.docx) / Excel (.xlsx) 导出（手写 OOXML）与 LaTeX 导出（tex.ts + tex/kamidoc.cls），均按需加载
   storage/             存储层
     http.ts            访问本应用接口的 JSON 请求与错误（HttpError）
     collection.ts      试剂库、缩写表共用：服务器 / 浏览器存储 + 页面共享缓存

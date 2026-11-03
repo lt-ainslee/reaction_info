@@ -24,7 +24,7 @@ interface Props {
   fileBase: string;
   building: boolean;
   reportLook: ReportLook;
-  onOffice: (kind: 'word' | 'excel') => void;
+  onOffice: (kind: 'word' | 'excel' | 'tex') => void;
   onReport: () => void;
   onNotify: (msg: string) => void;
 }
@@ -57,6 +57,7 @@ export function TableCard({ rxn, setRxn, units, onUnits, abbrs, pending, selecte
             <button onClick={() => download(`${fileBase}.csv`, toCsv(rxn, units, exportLabels))}>{t.exportCsv}</button>
             <button disabled={building} title={`${t.office.word}\n${t.report.schemeStyle}: ${t.report.looks[reportLook]}`} onClick={() => onOffice('word')}>Word</button>
             <button disabled={building} title={t.office.excel} onClick={() => onOffice('excel')}>Excel</button>
+            <button disabled={building} title={`${t.tex.tip}\n${t.report.schemeStyle}: ${t.report.looks[reportLook]}`} onClick={() => onOffice('tex')}>{t.tex.button}</button>
           </div>
           {run.status === 'planned' && (
             <label className="check small" title={t.runs.actualTip}>
