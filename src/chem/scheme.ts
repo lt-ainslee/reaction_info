@@ -419,8 +419,8 @@ export function schemeSvg(rd: MainModule | null, rxn: Reaction, opts: SchemeSvgO
   return { svg, width: W, height: H };
 }
 
-/** Rasterize an SVG from {@link schemeSvg} (browser only). `scale` = pixels per pt. */
-export async function svgToPng(svg: string, width: number, height: number, scale = 4): Promise<Blob | null> {
+/** Rasterize an SVG from {@link schemeSvg} (browser only). `scale` = pixels per pt; `fill` null = transparent. */
+export async function svgToPng(svg: string, width: number, height: number, scale = 4, fill: string | null = '#fff'): Promise<Blob | null> {
   const img = new Image();
   await new Promise<void>((resolve, reject) => {
     img.onload = () => resolve();
@@ -431,8 +431,10 @@ export async function svgToPng(svg: string, width: number, height: number, scale
   canvas.width = Math.round(width * PT * scale);
   canvas.height = Math.round(height * PT * scale);
   const g = canvas.getContext('2d')!;
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, canvas.width, canvas.height);
+  if (fill) {
+    g.fillStyle = fill;
+    g.fillRect(0, 0, canvas.width, canvas.height);
+  }
   g.drawImage(img, 0, 0, canvas.width, canvas.height);
   return new Promise((res) => canvas.toBlob(res, 'image/png'));
 }
