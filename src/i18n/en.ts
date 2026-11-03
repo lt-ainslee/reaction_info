@@ -382,6 +382,13 @@ export const en: Dict = {
   },
   tex: {
     button: 'LaTeX',
+    lang: 'en',
+    colon: ': ',
+    fileNote: [
+      'Kami-style experiment record. Compile with xelatex, twice (needs ctex; keep kamidoc.cls and the scheme picture in this folder).',
+      'Fill in the parts marked [To confirm: ...] and remove their \\tbc.',
+    ],
+    keepNote: 'keeptable: a ktable that never splits (used for up to 10 rows; longer tables use ktable, split across pages with the header repeated)',
     tip: 'Export a LaTeX experiment record (Kami style: .tex + kamidoc.cls + scheme picture; compile with xelatex)',
     eyebrow: 'Experiment record',
     result: 'Result',
@@ -390,7 +397,7 @@ export const en: Dict = {
     scheme: 'Scheme',
     noScheme: 'No scheme',
     materials: 'Reagents and materials',
-    materialsTable: 'Charges',
+    materialsTable: 'Amounts',
     procedure: 'Procedure',
     results: 'Results and characterization',
     productsTable: 'Products',

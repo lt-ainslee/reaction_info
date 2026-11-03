@@ -380,6 +380,13 @@ export const zh = {
   },
   tex: {
     button: 'LaTeX',
+    lang: 'zh' as 'zh' | 'en',
+    colon: '：',
+    fileNote: [
+      'Kami 风格实验记录。编译：xelatex 两遍（需要 ctex；kamidoc.cls 与反应式图片放在同一文件夹）。',
+      '【待确认：…】标出的内容请补充后删除 \\tbc。',
+    ],
+    keepNote: 'keeptable：与 ktable 样式相同、不拆页的表格（不超过 10 行时使用；更长的表格用 ktable 跨页并重复表头）',
     tip: '导出 LaTeX 实验记录（Kami 样式，.tex + kamidoc.cls + 反应式图片，xelatex 编译）',
     eyebrow: '实验记录',
     result: '结果',

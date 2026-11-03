@@ -148,8 +148,7 @@ export const KEEP_ROWS = 10;
  * fits (wrapped rows are taller than the estimate); this one is a tblr in a
  * box, with the same styling and the pending table title.
  */
-const KEEPTABLE = String.raw`% keeptable：与 ktable 样式相同、不拆页的表格（不超过 10 行时使用；更长的表格用 ktable 跨页并重复表头）
-\makeatletter
+const KEEPTABLE = String.raw`\makeatletter
 \SetTblrInner[tblr]{
   width=\linewidth, rowsep=3.6pt, colsep=7pt,
   hline{2}={0.6pt,border}, hline{3-Z}={0.25pt,border},
@@ -160,6 +159,30 @@ const KEEPTABLE = String.raw`% keeptable：与 ktable 样式相同、不拆页�
 \NewDocumentEnvironment{keeptable}{m +b}
   {\par\noindent\begin{minipage}{\linewidth}\kami@puttabletitle
    \begin{tblr}{#1}#2\end{tblr}\end{minipage}\par\vspace{4pt}}{}
+\makeatother`;
+
+/**
+ * Preamble of the English record: kamidoc.cls has its fixed labels in Chinese
+ * (表 1, 参考文献, 【待确认：…】); these are the same definitions in English.
+ */
+const ENGLISH = String.raw`% English labels (kamidoc.cls has them in Chinese)
+\makeatletter
+\renewcommand\tbc[1]{{\color{breakingfg}[To confirm: #1]}}
+\renewcommand\ph[1]{{\color{stone}[#1]}}
+\renewcommand\figph[2][40mm]{%
+  \begin{tcolorbox}[colback=ivory, colframe=ivory, boxrule=0pt, arc=4pt,
+    width=\linewidth, height=#1, valign=center, halign=center, boxsep=0pt,
+    before skip=4pt, after skip=4pt, fontupper=\small\color{stone}][#2]\end{tcolorbox}}
+\renewcommand\kami@puttabletitle{%
+  \ifx\kami@pendingtitle\@empty\else
+    \vspace{4pt}{\small\color{olive}\refstepcounter{table}Table \thetable\quad\kami@pendingtitle}%
+    \par\nopagebreak\vspace{3pt}\global\let\kami@pendingtitle\@empty
+  \fi}
+\renewenvironment{thebibliography}[1]{%
+  \section{References}\small\color{darkwarm}%
+  \list{[\arabic{enumiv}]}{\settowidth\labelwidth{[#1]}\leftmargin\labelwidth
+    \advance\leftmargin\labelsep\usecounter{enumiv}\itemsep 2pt\parsep 0pt}}%
+  {\endlist}
 \makeatother`;
 
 /** A Kami table: rows of LaTeX cells (row 1 = header), each cell braced so "[" or "," are safe. */
@@ -204,9 +227,9 @@ export function texReport({ rxn, units, t, lots, scheme, today }: TexInput): str
   const date = run.date ?? today ?? new Date().toISOString().slice(0, 10);
 
   const L: string[] = [];
+  const colon = (label: string, value: string) => `${u(label)}${k.colon}${value}`;
   L.push(
-    '% Kami 风格实验记录。编译：xelatex 两遍（需要 ctex；kamidoc.cls 与反应式图片放在同一文件夹）。',
-    '% 【待确认：…】标出的内容请补充后删除 \\tbc。',
+    ...k.fileNote.map((l) => `% ${l}`),
     '\\documentclass{kamidoc}',
     '',
     `\\eyebrow{${u(k.eyebrow)}}`,
@@ -215,9 +238,11 @@ export function texReport({ rxn, units, t, lots, scheme, today }: TexInput): str
   );
   const sub = [code && `${u(t.runs.runCode)} ${u(code)}`, rxn.conditions && u(rxn.conditions)].filter(Boolean);
   if (sub.length) L.push(`\\subtitle{${sub.join('\\sep ')}}`);
-  L.push(`\\meta{${[u(date), rxn.operator && u(rxn.operator), `${u(t.runs.status)}：${u(t.runs.statuses[run.status])}`].filter(Boolean).join('\\sep ')}}`);
+  L.push(`\\meta{${[u(date), rxn.operator && u(rxn.operator), colon(t.runs.status, u(t.runs.statuses[run.status]))].filter(Boolean).join('\\sep ')}}`);
   if (best) L.push(`\\headfigure{${fmt(best.v.yieldPct, 3)}\\%}{${u(t.yield)}\\\\${u(nameWithAbbr(best.c))}}`);
-  L.push('', KEEPTABLE, '', '\\begin{document}', '\\makeheader', '');
+  L.push('', `% ${k.keepNote}`, KEEPTABLE, '');
+  if (k.lang === 'en') L.push(ENGLISH, '');
+  L.push('\\begin{document}', '\\makeheader', '');
 
   // Result first.
   L.push(`\\keyline{${u(k.result)}}{${run.conclusion ? u(run.conclusion) : `\\tbc{${u(k.tbcResult)}}`}}`, '');
@@ -239,7 +264,7 @@ export function texReport({ rxn, units, t, lots, scheme, today }: TexInput): str
     const w = scheme.widthPt > 460 ? '\\linewidth' : `${scheme.widthPt.toFixed(1)}pt`;
     L.push('\\begin{center}', `\\includegraphics[width=${w}]{${scheme.file}}`, '\\end{center}');
   } else L.push(`\\figph[30mm]{${u(k.noScheme)}}`);
-  if (rxn.conditions) L.push(`\\note{${u(t.conditions)}：${u(rxn.conditions)}}`);
+  if (rxn.conditions) L.push(`\\note{${colon(t.conditions, u(rxn.conditions))}}`);
   L.push('');
 
   L.push(`\\section{${u(k.materials)}}`);
@@ -324,7 +349,7 @@ export function texReport({ rxn, units, t, lots, scheme, today }: TexInput): str
       ),
     );
   }
-  if (run.appearance) L.push('', `${u(t.runs.appearance)}：${u(run.appearance)}`);
+  if (run.appearance) L.push('', colon(t.runs.appearance, u(run.appearance)));
   const charac = products.filter((c) => c.characterization?.trim());
   for (const c of charac) {
     L.push('', `\\subsection{${u(nameWithAbbr(c))}}`);

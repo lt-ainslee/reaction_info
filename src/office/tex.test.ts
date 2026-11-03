@@ -138,3 +138,33 @@ describe('texName', () => {
     expect(texName('1,4-dioxane')).toBe('1,\\allowbreak{}4-\\allowbreak{}dioxane');
   });
 });
+
+describe('English record', () => {
+  /** The sample with its Chinese user text replaced, so any CJK left would be a label of ours. */
+  const english = (): Reaction => {
+    const r = sample();
+    r.title = 'Suzuki coupling, scale-up';
+    r.operator = 'J. Smith';
+    r.procedure = { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Stirred at 90 °C for 12 h.' }] }] };
+    r.references = r.references!.map((x) => ({ ...x, note: x.note && 'condition b' }));
+    r.components = r.components.map((c) => (c.lot ? { ...c, lot: { ...c.lot, verificationNote: 'contains 3% water' } } : c));
+    r.runs = r.runs!.map((x) => ({ ...x, appearance: 'white solid', conclusion: 'Yield held at 85% on 1 mmol scale.' }));
+    return r;
+  };
+
+  it('has no Chinese labels, colons or class texts', () => {
+    const out = texReport({ rxn: english(), units: DEFAULT_UNITS, t: en, scheme: null });
+    expect(out).not.toMatch(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/);
+    expect(out).toContain('\\renewcommand\\tbc');
+    expect(out).toContain('\\section{References}');
+    expect(out).toContain('Table \\thetable');
+    expect(out).toContain('\\meta{2026-11-03\\sep J. Smith\\sep Status: Done}');
+    if (process.env.TEX_OUT) writeFileSync(`${process.env.TEX_OUT}/en-only.tex`, out);
+  });
+
+  it('leaves the Chinese record to the class labels', () => {
+    const out = texReport({ rxn: sample(), units: DEFAULT_UNITS, t: zh, scheme: null });
+    expect(out).not.toContain('\\renewcommand\\tbc');
+    expect(out).toContain('状态：完成');
+  });
+});
