@@ -67,6 +67,25 @@ td > .inv-sub { margin-top: 1px; color: var(--muted); }
 .stock-results h4 { color: var(--n-lot); }
 .lot-stock { color: var(--n-lot); font-weight: 600; }
 .lot-chip:has(.lot-stock) { border-color: color-mix(in srgb, var(--n-lot) 55%, transparent); }
+/* Physical data (online record / custom) */
+.phys-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.inv-form .phys-head h5 { margin: 0; font-size: 13px; color: var(--text); }
+.panel .phys-head { margin-top: 14px; }
+.panel .phys-head h4 { margin: 0; }
+.phys-source button { min-height: 26px; padding: 1px 10px; font-size: 12px; }
+.phys-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 8px; font-size: 12.5px; }
+.phys-dl dt { color: var(--muted); }
+.phys-dl dd { margin: 0; }
+.phys-text { white-space: pre-wrap; }
+.phys-ghs { border: 0; padding: 0; margin: 0; }
+.phys-ghs-list { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.phys-ghs-list .check { display: inline-flex; align-items: center; gap: 4px; }
+.phys-ghs-list input { width: auto; min-height: 0; }
+.inv-grid textarea { width: 100%; min-width: 0; font-size: 13px; }
+.phys-other { margin-top: 6px; }
+.phys-other summary { cursor: pointer; color: var(--muted); }
+.phys-other dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 12.5px; }
+.phys-other dd { margin: 0; }
 @media (max-width: 720px) {
   .inv-table th:nth-child(3), .inv-table td:nth-child(3), .inv-table th:nth-child(7), .inv-table td:nth-child(7) { display: none; }
 }

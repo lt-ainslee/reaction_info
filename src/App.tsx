@@ -41,7 +41,7 @@ export default function App() {
   const { dirty, openId: savedId } = doc;
   const { rd, rdError } = useRDKit();
   const { flash, notify } = useNotify();
-  const { storage, remote, suggestedCode } = useStorageInfo(savedId);
+  const { storage, remote } = useStorageInfo();
   const pending = useAutoLookup(rxn, setRxn, rd);
 
   const [units, setUnits] = useUnits();
@@ -66,7 +66,7 @@ export default function App() {
   const [focusNode, setFocusNode] = useState<string | null>(null);
 
   const input = useCompoundInput(rd, rxn, setRxn, notify);
-  const save = useSaveReaction({ rxn, setRxn, doc, suggestedCode, remote, notify });
+  const save = useSaveReaction({ rxn, setRxn, doc, remote, notify });
   const { building, fileBase, exportOffice, exportScheme } = useExports({ rxn, shown, units, rd, labels, reportLook, notify });
   const confirmDiscard = (what: string) => !dirty || confirm(t.unsaved + ' — ' + what + '?');
 
@@ -90,7 +90,6 @@ export default function App() {
         <DocHead
           rxn={rxn}
           setRxn={setRxn}
-          suggestedCode={suggestedCode}
           dirty={dirty}
           savedId={savedId}
           busy={doc.busy}
@@ -98,7 +97,7 @@ export default function App() {
           onDownload={() => download(`${fileBase}.reaction.json`, reactionToFile(rxn), 'application/json')}
         />
 
-        <RunBar rxn={rxn} setRxn={setRxn} onNotify={notify} suggestedCode={suggestedCode} />
+        <RunBar rxn={rxn} setRxn={setRxn} onNotify={notify} />
 
         <SchemeCard
           rxn={rxn}

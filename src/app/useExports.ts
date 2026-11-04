@@ -2,7 +2,7 @@
 import type { MainModule } from '@rdkit/rdkit';
 import { useState } from 'react';
 import { saveBlob } from '../export';
-import { activeRun, runCode, runsOf } from '../chem/runs';
+import { runHeading, runsOf } from '../chem/runs';
 import type { ReportLook, SchemeLabels } from '../chem/scheme';
 import type { Reaction } from '../chem/stoich';
 import { useI18n } from '../i18n';
@@ -24,7 +24,7 @@ interface Options {
 
 /** "LT-042-1 Suzuki", safe as a file name. */
 export const fileBaseOf = (rxn: Reaction) =>
-  ([runCode(rxn, activeRun(rxn)), rxn.title].filter(Boolean).join(' ') || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
+  (runHeading(rxn) || 'reaction').replace(/[\\/:*?"<>|]/g, '_');
 
 export function useExports({ rxn, shown, units, rd, labels, reportLook, notify }: Options) {
   const { t } = useI18n();

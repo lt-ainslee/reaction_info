@@ -146,9 +146,22 @@ export function updateRun(r: Reaction, id: string, p: Partial<Pick<Run, 'status'
   return { ...rr, runs: rr.runs!.map((x) => (x.id === id ? { ...x, ...p } : x)) };
 }
 
-/** The run's code: its own (notebook) if set, else "<reaction code>-<seq>". */
-export function runCode(r: Pick<Reaction, 'code'>, run: Pick<FullRun, 'seq' | 'data'>): string {
-  return run.data.notebook?.trim() || (r.code?.trim() ? `${r.code.trim()}-${run.seq}` : `#${run.seq}`);
+/** The reaction code: the one entered, else the reaction title (never another reaction's code). */
+export function reactionCode(r: Partial<Pick<Reaction, 'code' | 'title'>>): string {
+  return r.code?.trim() || r.title?.trim() || '';
+}
+
+/** The run's code: its own (notebook) if set, else "<reaction code>-<seq>" (the code defaults to the title). */
+export function runCode(r: Partial<Pick<Reaction, 'code' | 'title'>>, run: { seq: number; data: { notebook?: string } }): string {
+  const code = reactionCode(r);
+  return run.data.notebook?.trim() || (code ? `${code}-${run.seq}` : `#${run.seq}`);
+}
+
+/** "LT-042-1 Suzuki": the active run's code and the title, without repeating a title the code already holds. */
+export function runHeading(r: Reaction): string {
+  const code = runCode(r, activeRun(r));
+  const title = r.title.trim();
+  return [code, title && !code.includes(title) ? title : ''].filter(Boolean).join(' ');
 }
 
 export function reactionMeta(r: Reaction): ReactionMeta {
@@ -177,22 +190,4 @@ export function canonicalJson(r: Reaction): string {
     data: pick(x.data as Reaction),
   }));
   return JSON.stringify({ ...base, runs });
-}
-
-/**
- * Next code after the saved ones: same prefix as the most recent code,
- * number one higher than the highest with that prefix ("LT-042" → "LT-043").
- */
-export function nextCode(recentFirst: (string | undefined)[], fallbackPrefix = 'RXN-'): string {
-  const parsed = recentFirst
-    .map((c) => c?.trim())
-    .filter((c): c is string => !!c)
-    .map((c) => /^(.*?)(\d+)$/.exec(c))
-    .filter((m): m is RegExpExecArray => !!m);
-  if (!parsed.length) return `${fallbackPrefix}001`;
-  const prefix = parsed[0][1];
-  const same = parsed.filter((m) => m[1] === prefix);
-  const width = Math.max(...same.map((m) => m[2].length));
-  const n = Math.max(...same.map((m) => Number(m[2]))) + 1;
-  return prefix + String(n).padStart(width, '0');
 }

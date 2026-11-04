@@ -2,7 +2,7 @@ import type { MainModule } from '@rdkit/rdkit';
 import { useEffect, useState } from 'react';
 import { getDetailsCached, pubchemUrl, searchByName, searchBySmiles, type PubChemDetails } from '../chem/pubchem';
 import { formulaMass } from '../chem/formula';
-import { GHS } from '../chem/ghs';
+import { usesCustomProps, type PropsSource } from '../chem/lots';
 import { parseInputText } from '../chem/parseInput';
 import { isValidSmiles, smilesInfo, smilesToSvg } from '../chem/rdkit';
 import type { Component } from '../chem/stoich';
@@ -10,6 +10,8 @@ import type { OpenEditor } from '../app/editor';
 import { useI18n } from '../i18n';
 import { AbbrField } from './AbbrField';
 import { LotEditor } from './LotEditor';
+import { GhsIcons, PhysView, SourceToggle } from './PhysProps';
+import { useInventory } from '../storage/inventory';
 import { fmt } from '../units';
 
 
@@ -27,7 +29,7 @@ interface Props {
 }
 
 export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, currentReactionId, onShowSpectra, onOpenInventory, onOpenAbbrs }: Props) {
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   // PubChem record of the compound's CID, tagged with it: a new CID shows nothing until its record arrives.
   const [fetched, setFetched] = useState<{ cid: number; details: PubChemDetails | null } | null>(null);
   // Looking up a CID for a compound without one.
@@ -39,6 +41,12 @@ export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, cu
   const error = searchFailed || (!!current && !current.details);
   const [structure, setStructure] = useState(c.smiles ?? '');
   const [structMsg, setStructMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Custom physical data of the inventory bottle this compound uses, if any.
+  const inventory = useInventory();
+  const libLot = c.lot?.lotId ? inventory?.find((l) => l.id === c.lot!.lotId) : undefined;
+  const custom = libLot?.props;
+  const [sourceChoice, setSourceChoice] = useState<PropsSource | null>(null);
+  const source: PropsSource = custom ? (sourceChoice ?? (usesCustomProps(libLot) ? 'custom' : 'online')) : 'online';
 
   /** Accept a SMILES, or a pasted ChemDraw molfile / CDXML (first structure). */
   const applyStructure = (input = structure) => {
@@ -182,49 +190,49 @@ export function DetailPanel({ c, rd, openEditor, onUpdate, onClose, onNotify, cu
         )}
       </dl>
 
-      {!c.cid && !loading && (
-        <button onClick={lookup}>{t.fetchFromPubchem}</button>
+      {custom && (
+        <div className="phys-head">
+          <h4>{t.phys.title}</h4>
+          <SourceToggle value={source} onChange={setSourceChoice} customLabel={t.phys.customLib} />
+        </div>
       )}
-      {loading && <p className="muted">{t.loadingDetails}</p>}
-      {error && <p className="warn">{t.networkError}</p>}
-
-      {details && (
+      {source === 'custom' && custom ? (
+        <PhysView props={custom} footer={<p className="hint">{t.phys.customSource.replace('{name}', libLot!.name)}</p>} />
+      ) : (
         <>
-          <dl>
-            <dt>{t.col.density}</dt>
-            <dd>
-              {details.densityText ?? <span className="muted">{t.noData}</span>}
-              {details.density && details.density !== c.density && (
-                <button className="small" onClick={() => onUpdate({ density: details.density, densitySource: 'pubchem' })}>
-                  {t.useDensity} ({details.density})
-                </button>
-              )}
-            </dd>
-            <dt>{t.meltingPoint}</dt>
-            <dd>{list(details.meltingPoint)}</dd>
-            <dt>{t.boilingPoint}</dt>
-            <dd>{list(details.boilingPoint)}</dd>
-            <dt>{t.flashPoint}</dt>
-            <dd>{list(details.flashPoint)}</dd>
-            <dt>{t.solubility}</dt>
-            <dd>{list(details.solubility)}</dd>
-          </dl>
-          <h4>{t.ghs}</h4>
-          {details.ghsPictograms.length > 0 && (
-            <div className="ghs">
-              {details.ghsPictograms.map((p) => {
-                const [code, zhName] = GHS[p] ?? ['', p];
-                return (
-                  <figure key={p}>
-                    {code && <img src={`https://pubchem.ncbi.nlm.nih.gov/images/ghs/${code}.svg`} alt={p} width={48} height={48} />}
-                    <figcaption>{lang === 'zh' ? zhName : p}</figcaption>
-                  </figure>
-                );
-              })}
-            </div>
+          {!c.cid && !loading && (
+            <button onClick={lookup}>{t.fetchFromPubchem}</button>
           )}
-          {list(details.hazards)}
-          <p className="hint">{t.dataSource}</p>
+          {loading && <p className="muted">{t.loadingDetails}</p>}
+          {error && <p className="warn">{t.networkError}</p>}
+
+          {details && (
+            <>
+              <dl>
+                <dt>{t.col.density}</dt>
+                <dd>
+                  {details.densityText ?? <span className="muted">{t.noData}</span>}
+                  {details.density && details.density !== c.density && (
+                    <button className="small" onClick={() => onUpdate({ density: details.density, densitySource: 'pubchem' })}>
+                      {t.useDensity} ({details.density})
+                    </button>
+                  )}
+                </dd>
+                <dt>{t.meltingPoint}</dt>
+                <dd>{list(details.meltingPoint)}</dd>
+                <dt>{t.boilingPoint}</dt>
+                <dd>{list(details.boilingPoint)}</dd>
+                <dt>{t.flashPoint}</dt>
+                <dd>{list(details.flashPoint)}</dd>
+                <dt>{t.solubility}</dt>
+                <dd>{list(details.solubility)}</dd>
+              </dl>
+              <h4>{t.ghs}</h4>
+              <GhsIcons pictograms={details.ghsPictograms} />
+              {list(details.hazards)}
+              <p className="hint">{t.dataSource}</p>
+            </>
+          )}
         </>
       )}
     </aside>
