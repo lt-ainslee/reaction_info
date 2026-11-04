@@ -479,6 +479,8 @@ const FIELD_LABEL = (t: ReturnType<typeof useI18n>['t'], f: Field): string =>
     catalogNumber: t.lots.catalog, lotNumber: t.lots.lot, quantity: t.inv.quantity, remaining: t.inv.remaining, location: t.inv.location,
     status: t.inv.status, receivedAt: t.lots.received, expiresAt: t.inv.expires, purity: t.lots.purity, molarity: t.inv.labelConc,
     density: t.inv.density, owner: t.inv.owner, note: t.att.noteLabel,
+    appearance: t.phys.appearance, meltingPoint: t.meltingPoint, boilingPoint: t.boilingPoint, flashPoint: t.flashPoint,
+    solubility: t.solubility, storageCond: t.phys.storage, ghs: t.ghs, hazards: t.phys.hazards,
   })[f];
 
 function ImportDialog({ rd, onClose, onNotify }: { rd: MainModule | null; onClose: () => void; onNotify: (m: string) => void }) {

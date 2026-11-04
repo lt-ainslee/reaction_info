@@ -1,11 +1,14 @@
 // Import an existing inventory spreadsheet (CSV or .xlsx): read the first
 // sheet, match column headers (Chinese or English) to inventory fields.
 import { strFromU8, unzipSync } from 'fflate';
-import { compoundKey, type ReagentLot, type StockStatus } from '../chem/lots';
+import { GHS } from '../chem/ghs';
+import { compoundKey, physProps, type PhysProps, type ReagentLot, type StockStatus } from '../chem/lots';
 
 export type Field =
   | 'name' | 'cas' | 'smiles' | 'formula' | 'mw' | 'supplier' | 'spec' | 'catalogNumber' | 'lotNumber' | 'quantity' | 'remaining'
-  | 'location' | 'status' | 'receivedAt' | 'expiresAt' | 'purity' | 'molarity' | 'density' | 'owner' | 'note';
+  | 'location' | 'status' | 'receivedAt' | 'expiresAt' | 'purity' | 'molarity' | 'density' | 'owner' | 'note'
+  // Custom physical / safety data (ReagentLot.props).
+  | 'appearance' | 'meltingPoint' | 'boilingPoint' | 'flashPoint' | 'solubility' | 'storageCond' | 'ghs' | 'hazards';
 
 /** Header words for each field (lower-case, compared without spaces / punctuation). */
 const ALIASES: Record<Field, string[]> = {
@@ -18,7 +21,7 @@ const ALIASES: Record<Field, string[]> = {
   spec: ['规格', '纯度等级', '等级', 'grade', 'spec', 'specification', '纯度规格'],
   catalogNumber: ['货号', '产品编号', '目录号', 'catalog', 'catalogno', 'catno', 'cat', 'productno', 'sku'],
   lotNumber: ['批号', '批次', 'lot', 'lotno', 'batch', 'batchno'],
-  quantity: ['包装', '数量', '包装规格', '容量', 'quantity', 'size', 'packsize', 'amount', 'package'],
+  quantity: ['包装', '数量', '包装规格', '容量', 'quantity', 'size', 'pack', 'packsize', 'amount', 'package'],
   remaining: ['余量', '剩余', '剩余量', 'remaining', 'left'],
   location: ['位置', '存放位置', '存放地点', '柜号', '储存位置', 'location', 'storage', 'shelf', 'cabinet'],
   status: ['状态', 'status'],
@@ -29,21 +32,52 @@ const ALIASES: Record<Field, string[]> = {
   density: ['密度', 'density'],
   owner: ['负责人', '保管人', '购买人', 'owner', 'responsible'],
   note: ['备注', '说明', 'note', 'notes', 'remark', 'remarks', 'comment'],
+  appearance: ['外观', '性状', '外观性状', '颜色', 'appearance', 'physicalform', 'color', 'colour'],
+  meltingPoint: ['熔点', '熔程', 'mp', 'meltingpoint', 'meltingrange'],
+  boilingPoint: ['沸点', 'bp', 'boilingpoint'],
+  flashPoint: ['闪点', 'flashpoint'],
+  solubility: ['溶解性', '溶解度', 'solubility'],
+  storageCond: ['储存条件', '存储条件', '保存条件', '贮存条件', '储存温度', '保存温度', '存储温度', 'storageconditions', 'storagecondition', 'storagetemperature', 'storagetemp'],
+  ghs: ['ghs', 'ghs图标', 'ghs危险性', 'ghs标志', '危险性', '危险类别', '危险标志', '危险品类别', 'ghshazards', 'ghspictograms', 'pictogram', 'pictograms', 'hazardclass'],
+  hazards: ['危险说明', '危险性说明', '危害说明', 'h语句', 'h声明', 'hazardstatements', 'hazardstatement', 'hstatements', 'hazards'],
 };
 
 const norm = (s: string) => s.toLowerCase().replace(/[\s_\-./:：()（）#]+/g, '');
 
-/** Column index → field, from the header row. */
+/**
+ * Column index → field, from the header row: exact aliases first (over the
+ * whole row, so "备注" keeps "note" even after "鉴定说明"), then the field with
+ * the longest alias contained in the header ("储存温度 ℃" → storage
+ * conditions, not "mp" inside "temperature").
+ */
 export function mapHeaders(header: string[]): (Field | null)[] {
+  const fields = Object.keys(ALIASES) as Field[];
+  const names = header.map(norm);
+  const out: (Field | null)[] = names.map(() => null);
   const used = new Set<Field>();
-  return header.map((h) => {
-    const n = norm(h);
-    if (!n) return null;
-    const exact = (Object.keys(ALIASES) as Field[]).find((f) => !used.has(f) && ALIASES[f].some((a) => norm(a) === n));
-    const partial = exact ?? (Object.keys(ALIASES) as Field[]).find((f) => !used.has(f) && ALIASES[f].some((a) => a.length > 1 && n.includes(norm(a))));
-    if (partial) used.add(partial);
-    return partial ?? null;
+  names.forEach((n, i) => {
+    const f = n ? fields.find((x) => !used.has(x) && ALIASES[x].some((a) => norm(a) === n)) : undefined;
+    if (f) {
+      out[i] = f;
+      used.add(f);
+    }
   });
+  names.forEach((n, i) => {
+    if (!n || out[i]) return;
+    let best = 0;
+    for (const f of fields) {
+      if (used.has(f)) continue;
+      for (const a of ALIASES[f]) {
+        const na = norm(a);
+        if (na.length > 1 && na.length > best && n.includes(na)) {
+          best = na.length;
+          out[i] = f;
+        }
+      }
+    }
+    if (out[i]) used.add(out[i]!);
+  });
+  return out;
 }
 
 /** CSV / TSV (quotes, embedded newlines, BOM). */
@@ -142,6 +176,21 @@ const numOf = (s: string) => {
   return m ? Number(m[0]) : undefined;
 };
 
+/** GHS pictograms named in a cell: codes (GHS02), English labels or Chinese names ("易燃、刺激性"). */
+export function ghsOf(text: string): string[] {
+  const lower = text.toLowerCase();
+  return Object.entries(GHS)
+    .filter(([key, [code, zh]]) => {
+      if (new RegExp(`ghs\\s*0?${Number(code.slice(3))}(?!\\d)`, 'i').test(text)) return true;
+      if (lower.includes(key.toLowerCase())) return true;
+      return zh.split('/').some((w) => text.includes(w));
+    })
+    .map(([key]) => key);
+}
+
+/** Hazard statements: one per line, or separated by ; / ；. */
+const hazardsOf = (text: string) => text.split(/[\n;；]+/).map((x) => x.trim()).filter(Boolean);
+
 const date = (s: string) => {
   const m = /(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/.exec(s);
   return m ? `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}` : undefined;
@@ -168,6 +217,20 @@ export function rowsToLots(rows: string[][], newId: () => string, now = Date.now
     const status = STATUS_WORDS.find(([re]) => re.test(statusText))?.[1] ?? 'in_stock';
     const purity = numOf(get('purity') || (/(\d+(\.\d+)?)\s*%/.exec(get('spec'))?.[0] ?? ''));
     const molarity = numOf(get('molarity'));
+    // Density: the number for the calculator; the cell as written when it says more ("0.889 g/mL (25 °C)").
+    const densityCell = get('density');
+    const density = numOf(densityCell);
+    const props = physProps({
+      appearance: get('appearance'),
+      densityText: densityCell && densityCell !== String(density) ? densityCell : undefined,
+      meltingPoint: get('meltingPoint'),
+      boilingPoint: get('boilingPoint'),
+      flashPoint: get('flashPoint'),
+      solubility: get('solubility'),
+      storage: get('storageCond'),
+      ghsPictograms: ghsOf(get('ghs')),
+      hazards: hazardsOf(get('hazards')),
+    } satisfies PhysProps);
     const lot: ReagentLot = {
       id: newId(),
       key: '',
@@ -177,7 +240,7 @@ export function rowsToLots(rows: string[][], newId: () => string, now = Date.now
       compound: {
         ...(get('formula') ? { formula: get('formula') } : {}),
         ...(numOf(get('mw')) ? { mw: numOf(get('mw')) } : {}),
-        ...(numOf(get('density')) ? { density: numOf(get('density')) } : {}),
+        ...(density && density > 0 ? { density } : {}),
         ...(molarity ? { form: 'solutionM' as const, molarity } : {}),
       },
       supplier: get('supplier') || undefined,
@@ -192,6 +255,8 @@ export function rowsToLots(rows: string[][], newId: () => string, now = Date.now
       owner: get('owner') || undefined,
       note: get('note') || undefined,
       ...(purity && purity > 0 && purity <= 100 && get('purity') ? { purity } : {}),
+      // Custom data from the sheet is what the bottle shows by default.
+      ...(props ? { props, propsSource: 'custom' as const } : {}),
       status,
       createdAt: now,
       updatedAt: now,

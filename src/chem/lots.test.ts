@@ -90,6 +90,29 @@ describe('inventory', () => {
     expect(lots).toHaveLength(2);
     expect(lots[0]).toMatchObject({ name: '溴苯', cas: '108-86-1', key: 'cas:108-86-1', supplier: 'Adamas', lotNumber: 'P2304', location: '4号柜B层', status: 'in_stock', receivedAt: '2026-03-05', note: '含, 逗号' });
     expect(lots[1].status).toBe('empty');
+    expect(lots[0].props).toBeUndefined();
+  });
+
+  it('imports physical data columns as custom data', async () => {
+    const { parseCsv, rowsToLots, mapHeaders } = await import('../inventory/importTable');
+    const rows = parseCsv(
+      '名称,外观,熔点(℃),沸点 ℃,闪点,溶解性,储存温度,密度,GHS 危险性,危险说明\n' +
+        'THF,无色液体,-108.4,66,-14 °C,与水混溶,2-8 °C,0.889 g/mL (25 °C),"易燃, GHS07","H225 高度易燃液体和蒸气；H319"\n' +
+        '苯甲酸,白色固体,122,249,,,,,,\n',
+    );
+    const { lots, fields } = rowsToLots(rows, () => 'x', 1);
+    expect(fields).toEqual(['name', 'appearance', 'meltingPoint', 'boilingPoint', 'flashPoint', 'solubility', 'storageCond', 'density', 'ghs', 'hazards']);
+    expect(lots[0].compound?.density).toBe(0.889);
+    expect(lots[0].propsSource).toBe('custom');
+    expect(lots[0].props).toEqual({
+      appearance: '无色液体', densityText: '0.889 g/mL (25 °C)', meltingPoint: '-108.4', boilingPoint: '66', flashPoint: '-14 °C',
+      solubility: '与水混溶', storage: '2-8 °C', ghsPictograms: ['Flammable', 'Irritant'], hazards: ['H225 高度易燃液体和蒸气', 'H319'],
+    });
+    expect(lots[1].props).toEqual({ appearance: '白色固体', meltingPoint: '122', boilingPoint: '249' });
+    // English headers, including the ones the Excel export writes.
+    expect(mapHeaders(['Melting point', 'b.p.', 'Storage temperature', 'Storage', 'GHS hazards', 'Hazard statements'])).toEqual([
+      'meltingPoint', 'boilingPoint', 'storageCond', 'location', 'ghs', 'hazards',
+    ]);
   });
 });
 
