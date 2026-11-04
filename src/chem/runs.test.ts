@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeReaction } from '../storage/schema';
-import { addRun, canonicalJson, nextCode, reactionMeta, removeRun, runCode, runsOf, switchRun, updateRun, withRuns } from './runs';
+import { addRun, canonicalJson, reactionCode, reactionMeta, removeRun, runCode, runsOf, switchRun, updateRun, withRuns } from './runs';
 import { compute, effectiveRefMmol, newComponent, type Reaction } from './stoich';
 
 const base = (): Reaction => {
@@ -61,10 +61,14 @@ describe('runs', () => {
     expect(runsOf(removeRun(r, 'r1'))).toHaveLength(1);
   });
 
-  it('suggests the next reaction code', () => {
-    expect(nextCode([])).toBe('RXN-001');
-    expect(nextCode(['LT-042', 'LT-007', 'BH-100'])).toBe('LT-043');
-    expect(nextCode([undefined, 'LT-2026-009'])).toBe('LT-2026-010');
+  it('defaults the reaction code to the title, never to another reaction', () => {
+    const run = { seq: 2, data: {} };
+    expect(reactionCode({ code: ' LT-042 ', title: 'Suzuki' })).toBe('LT-042');
+    expect(reactionCode({ title: ' Suzuki ' })).toBe('Suzuki');
+    expect(reactionCode({ title: '' })).toBe('');
+    expect(runCode({ title: 'Suzuki' }, run)).toBe('Suzuki-2');
+    expect(runCode({ title: '' }, run)).toBe('#2');
+    expect(runCode({ title: 'Suzuki' }, { seq: 2, data: { notebook: 'NB-7' } })).toBe('NB-7');
   });
 });
 

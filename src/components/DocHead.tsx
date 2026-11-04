@@ -5,7 +5,6 @@ import { useI18n } from '../i18n';
 interface Props {
   rxn: Reaction;
   setRxn: (r: Reaction) => void;
-  suggestedCode: string;
   dirty: boolean;
   savedId?: string;
   busy: boolean;
@@ -13,7 +12,7 @@ interface Props {
   onDownload: () => void;
 }
 
-export function DocHead({ rxn, setRxn, suggestedCode, dirty, savedId, busy, onSave, onDownload }: Props) {
+export function DocHead({ rxn, setRxn, dirty, savedId, busy, onSave, onDownload }: Props) {
   const { t } = useI18n();
   return (
     <div className="doc-head">
@@ -30,13 +29,11 @@ export function DocHead({ rxn, setRxn, suggestedCode, dirty, savedId, busy, onSa
           <input
             className="code-input"
             value={rxn.code ?? ''}
-            placeholder={t.runs.codePh.replace('{code}', suggestedCode)}
+            placeholder={rxn.title.trim() || t.runs.codePh}
+            title={t.runs.codeTip}
             aria-label={t.runs.code}
             onChange={(e) => setRxn({ ...rxn, code: e.target.value || undefined })}
           />
-          {!rxn.code && (
-            <button className="link small no-print" onClick={() => setRxn({ ...rxn, code: suggestedCode })}>{t.runs.autoCode}</button>
-          )}
         </span>
       </div>
       <div className="doc-actions no-print">

@@ -1,4 +1,4 @@
-import { activeRun, runCode } from './chem/runs';
+import { runHeading } from './chem/runs';
 import { compute, type Component, type Reaction } from './chem/stoich';
 import { AMOUNT_UNITS, fmt, MASS_UNITS, VOLUME_UNITS, type Units } from './units';
 
@@ -57,7 +57,7 @@ export function toMarkdown(rxn: Reaction, u: Units, t: Labels): string {
   const esc = (s: string) => s.replace(/\|/g, '\\|');
   const line = (r: string[]) => `| ${r.map(esc).join(' | ')} |`;
   const out = [];
-  out.push(`### ${[runCode(rxn, activeRun(rxn)), rxn.title].filter(Boolean).join(' ')}`, '');
+  out.push(`### ${runHeading(rxn)}`, '');
   if (rxn.conditions?.trim()) out.push(`${t.conditions}: ${rxn.conditions.trim()}`, '');
   out.push(line(header), line(header.map(() => '---')), ...body.map(line));
   if (rxn.notes?.trim()) out.push('', rxn.notes.trim());

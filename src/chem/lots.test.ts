@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeReaction } from '../storage/schema';
-import { applyLot, compoundKey, lotFromComponent, lotLabel, normalizeLot, normalizeSnapshot } from './lots';
+import { applyLot, compoundKey, lotFromComponent, lotLabel, normalizeLot, normalizeSnapshot, physProps, usesCustomProps } from './lots';
 import { extractDoi, formatReference, fromCrossref } from './refs';
 import { addRun, runsOf, withRuns } from './runs';
 import { newComponent } from './stoich';
@@ -90,5 +90,24 @@ describe('inventory', () => {
     expect(lots).toHaveLength(2);
     expect(lots[0]).toMatchObject({ name: '溴苯', cas: '108-86-1', key: 'cas:108-86-1', supplier: 'Adamas', lotNumber: 'P2304', location: '4号柜B层', status: 'in_stock', receivedAt: '2026-03-05', note: '含, 逗号' });
     expect(lots[1].status).toBe('empty');
+  });
+});
+
+describe('custom physical data', () => {
+  it('keeps cleaned custom data and the chosen source', () => {
+    const l = normalizeLot({
+      id: 'L1', name: 'THF', propsSource: 'online',
+      props: { meltingPoint: ' -108 °C ', boilingPoint: '', ghsPictograms: ['Flammable', 'Nope', 'Flammable'], hazards: ['H225', ' ', 'H225'], x: 1 },
+    })!;
+    expect(l.props).toEqual({ meltingPoint: '-108 °C', ghsPictograms: ['Flammable'], hazards: ['H225'] });
+    expect(l.propsSource).toBe('online');
+    expect(usesCustomProps(l)).toBe(false);
+    expect(usesCustomProps({ props: l.props })).toBe(true);
+    expect(usesCustomProps({})).toBe(false);
+  });
+
+  it('drops empty custom data', () => {
+    expect(physProps({ meltingPoint: '  ', hazards: [] })).toBeUndefined();
+    expect(normalizeLot({ id: 'L1', name: 'THF', props: {} })!.props).toBeUndefined();
   });
 });

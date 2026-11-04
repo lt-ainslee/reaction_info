@@ -7,8 +7,9 @@ import type { MainModule } from '@rdkit/rdkit';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { saveBlob } from '../export';
 import {
-  available, compoundKey, lotSearchText, STOCK_STATUSES, VERIFICATIONS, type ReagentLot, type StockStatus, type Verification,
+  available, compoundKey, lotSearchText, physProps, usesCustomProps, STOCK_STATUSES, VERIFICATIONS, type ReagentLot, type StockStatus, type Verification,
 } from '../chem/lots';
+import { getDetailsCached, type PubChemDetails } from '../chem/pubchem';
 import { resolveOne } from '../chem/resolve';
 import type { Form, Phase, Role } from '../chem/stoich';
 import { useI18n } from '../i18n';
@@ -18,6 +19,7 @@ import { newId, repoReady } from '../storage';
 import { removeFromInventory, saveToInventory, useInventory } from '../storage/inventory';
 import { fmt } from '../units';
 import { LotSpectra } from './LotSpectra';
+import { GhsIcons, PhysForm, PhysView, propsFromDetails, SourceToggle } from './PhysProps';
 
 interface Props {
   rd: MainModule | null;
@@ -66,14 +68,17 @@ export function Inventory({ rd, onClose, onAdd, onNotify }: Props) {
   const exportXlsx = () => {
     const rows = [
       [I.name, 'CAS', I.formula, I.mw, t.lots.supplier, t.lots.spec, t.lots.catalog, t.lots.lot, I.quantity, I.remaining, I.location, I.status,
-        t.lots.received, I.expires, t.lots.purity, t.lots.molarity, I.owner, t.lots.verification, t.lots.verificationNote, t.lots.spectra, t.att.noteLabel],
+        t.lots.received, I.expires, t.lots.purity, t.lots.molarity, I.owner, t.lots.verification, t.lots.verificationNote, t.lots.spectra, t.att.noteLabel,
+        t.phys.appearance, t.phys.density, t.meltingPoint, t.boilingPoint, t.flashPoint, t.solubility, t.phys.storage, t.ghs, t.phys.hazards],
       ...(lots ?? []).map((l) => [
         l.name, l.cas, l.compound?.formula, l.compound?.mw, l.supplier, l.spec, l.catalogNumber, l.lotNumber, l.quantity, l.remaining, l.location,
         I.statuses[l.status ?? 'in_stock'], l.receivedAt, l.expiresAt, l.purity, l.molarity ?? l.compound?.molarity, l.owner,
         t.lots.verifications[l.verification ?? 'unverified'], l.verificationNote, l.attachments, l.note,
+        l.props?.appearance, l.props?.densityText, l.props?.meltingPoint, l.props?.boilingPoint, l.props?.flashPoint, l.props?.solubility,
+        l.props?.storage, l.props?.ghsPictograms?.join(', '), l.props?.hazards?.join('\n'),
       ]),
     ];
-    saveBlob(buildXlsx([{ name: I.title, rows, widths: [24, 12, 12, 9, 12, 16, 12, 12, 10, 10, 16, 9, 11, 11, 8, 8, 9, 9, 20, 8, 24] }]), `${I.title}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    saveBlob(buildXlsx([{ name: I.title, rows, widths: [24, 12, 12, 9, 12, 16, 12, 12, 10, 10, 16, 9, 11, 11, 8, 8, 9, 9, 20, 8, 24, 14, 12, 14, 14, 14, 20, 16, 20, 30] }]), `${I.title}-${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   return (
@@ -250,7 +255,28 @@ function LotForm({ initial, focusSpectra, rd, remote, onClose, onNotify }: LotFo
     }
   };
 
-  const store = () => saveToInventory({ ...l, name: l.name.trim(), key: compoundKey(l) });
+  // Physical data: the online record (by PubChem CID) or the custom one.
+  const source = usesCustomProps(l) ? 'custom' : 'online';
+  const cid = c.cid;
+  const [online, setOnline] = useState<{ cid: number; details: PubChemDetails | null } | null>(null);
+  const details = cid && online?.cid === cid ? online.details : undefined;
+  useEffect(() => {
+    if (source !== 'online' || !cid || online?.cid === cid) return;
+    let cancelled = false;
+    getDetailsCached(cid).then(
+      (d) => !cancelled && setOnline({ cid, details: d }),
+      () => !cancelled && setOnline({ cid, details: null }),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [source, cid, online?.cid]);
+
+  const store = () => {
+    const { props: raw, ...rest } = l;
+    const props = physProps(raw);
+    return saveToInventory({ ...rest, ...(props ? { props } : {}), name: l.name.trim(), key: compoundKey(l) });
+  };
 
   const save = async () => {
     if (!l.name.trim()) return;
@@ -344,6 +370,51 @@ function LotForm({ initial, focusSpectra, rd, remote, onClose, onNotify }: LotFo
         {choice === 'solutionWt' && numIn(I.wtPercent, c.wtPercent, (wtPercent) => setC({ wtPercent }))}
         {(choice === 'liquid' || choice === 'solutionM' || choice === 'solutionWt') &&
           numIn(I.density, choice === 'liquid' ? c.density : c.solutionDensity, (v) => setC(choice === 'liquid' ? { density: v } : { solutionDensity: v }))}
+
+        <div className="inv-sep inv-wide" />
+        <div className="inv-wide phys-head">
+          <h5>{t.phys.title}</h5>
+          <SourceToggle value={source} onChange={(propsSource) => set({ propsSource })} />
+        </div>
+        {source === 'custom' ? (
+          <PhysForm value={l.props ?? {}} onChange={(props) => set({ props })} />
+        ) : (
+          <div className="inv-wide phys-online">
+            {!cid && <p className="hint">{t.phys.onlineNeedCid}</p>}
+            {!!cid && details === undefined && <p className="muted small">{t.loadingDetails}</p>}
+            {details === null && <p className="warn small">{t.networkError}</p>}
+            {details && (
+              <>
+                <dl className="phys-dl">
+                  <dt>{t.phys.density}</dt>
+                  <dd>{details.densityText ?? '—'}</dd>
+                  <dt>{t.meltingPoint}</dt>
+                  <dd>{details.meltingPoint.slice(0, 2).join('; ') || '—'}</dd>
+                  <dt>{t.boilingPoint}</dt>
+                  <dd>{details.boilingPoint.slice(0, 2).join('; ') || '—'}</dd>
+                  <dt>{t.flashPoint}</dt>
+                  <dd>{details.flashPoint.slice(0, 2).join('; ') || '—'}</dd>
+                  <dt>{t.solubility}</dt>
+                  <dd>{details.solubility.slice(0, 2).join('; ') || '—'}</dd>
+                </dl>
+                <GhsIcons pictograms={details.ghsPictograms} />
+                <button
+                  type="button"
+                  className="ghost small"
+                  onClick={() => set({ props: propsFromDetails(details, l.props), propsSource: 'custom' })}
+                >
+                  {t.phys.copyOnline}
+                </button>
+              </>
+            )}
+            {l.props && (
+              <details className="phys-other">
+                <summary className="small">{t.phys.customLib}</summary>
+                <PhysView props={l.props} />
+              </details>
+            )}
+          </div>
+        )}
 
         <div className="inv-sep inv-wide" />
         {text('supplier', L.supplier, 'Adamas / Sigma / TCI…')}

@@ -1,9 +1,9 @@
 // What the report fetches: the library entries of the lots used, the
 // reaction's attachment tree, and GHS safety data (cached, one compound at a time).
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getGraph } from '../attachments/api';
 import { compoundOf, indexGraph, treeRows, type Row } from '../attachments/graph';
-import type { ReagentLot } from '../chem/lots';
+import { usesCustomProps, type ReagentLot } from '../chem/lots';
 import { getSafetyCached, type PubChemSafety } from '../chem/pubchem';
 import { findCid } from '../chem/resolve';
 import type { Reaction } from '../chem/stoich';
@@ -63,5 +63,18 @@ export function useReportData(rxn: Reaction, reactionId: string | undefined, wit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [withSafety, rxn.components]);
 
-  return { lots, attachments, safety, progress };
+  // Bottles with custom safety data (shown instead of the online record) override PubChem.
+  const merged = useMemo(() => {
+    const m: SafetyMap = { ...safety };
+    for (const c of rxn.components) {
+      const l = c.lot?.lotId ? lots.get(c.lot.lotId) : undefined;
+      const p = l?.props;
+      if (l && p && usesCustomProps(l) && (p.ghsPictograms?.length || p.hazards?.length)) {
+        m[c.id] = { ghsPictograms: p.ghsPictograms ?? [], hazards: p.hazards ?? [] };
+      }
+    }
+    return m;
+  }, [safety, lots, rxn.components]);
+
+  return { lots, attachments, safety: merged, progress };
 }

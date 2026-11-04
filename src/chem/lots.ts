@@ -4,6 +4,7 @@
 // run, so later edits to the library don't rewrite old records. Spectra
 // that identify a lot are attached to the lot, so every reaction using the
 // bottle sees them.
+import { GHS } from './ghs';
 import type { Component, Form, Phase } from './stoich';
 
 export type LotSource = 'commercial' | 'made';
@@ -23,6 +24,27 @@ export interface CompoundInfo {
   wtPercent?: number;
   solutionDensity?: number;
 }
+/**
+ * Physical / chemical data entered by hand for a bottle (instead of, or
+ * besides, the online PubChem record): free text as on the label or SDS.
+ */
+export interface PhysProps {
+  appearance?: string;
+  densityText?: string;
+  meltingPoint?: string;
+  boilingPoint?: string;
+  flashPoint?: string;
+  solubility?: string;
+  storage?: string;
+  /** GHS pictograms, by PubChem's English label (keys of GHS). */
+  ghsPictograms?: string[];
+  /** Hazard statements, one per entry ("H225: Highly flammable…"). */
+  hazards?: string[];
+}
+/** Which physical data a bottle shows: the online (PubChem) record or the custom one. */
+export type PropsSource = 'online' | 'custom';
+export const PHYS_TEXT_FIELDS = ['appearance', 'densityText', 'meltingPoint', 'boilingPoint', 'flashPoint', 'solubility', 'storage'] as const;
+
 export type Verification = 'unverified' | 'ok' | 'issue';
 export const VERIFICATIONS: Verification[] = ['unverified', 'ok', 'issue'];
 
@@ -56,6 +78,10 @@ export interface ReagentLot extends LotInfo {
   cas?: string;
   smiles?: string;
   compound?: CompoundInfo;
+  /** Custom physical / safety data. */
+  props?: PhysProps;
+  /** Shown by default: the custom data or the online record (default: custom when there is any). */
+  propsSource?: PropsSource;
   // Inventory (the bottle on the shelf).
   location?: string;
   /** Pack size as bought, e.g. "500 g", "100 mL". */
@@ -160,12 +186,34 @@ export function matchesCompound(l: Pick<ReagentLot, 'key' | 'cas' | 'smiles' | '
   return !!c.name.trim() && c.name.trim().toLowerCase() === l.name.trim().toLowerCase();
 }
 
+/** Clean custom data: trimmed, empty fields dropped; undefined when nothing is left. */
+export function physProps(raw: unknown): PhysProps | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const r = raw as Record<string, unknown>;
+  const out: PhysProps = {};
+  for (const k of PHYS_TEXT_FIELDS) {
+    const v = typeof r[k] === 'string' ? (r[k] as string).trim().slice(0, 1000) : '';
+    if (v) out[k] = v;
+  }
+  const strings = (x: unknown) =>
+    Array.isArray(x) ? [...new Set(x.filter((s): s is string => typeof s === 'string').map((s) => s.trim().slice(0, 500)).filter(Boolean))] : [];
+  const ghs = strings(r.ghsPictograms).filter((g) => g in GHS);
+  if (ghs.length) out.ghsPictograms = ghs;
+  const hazards = strings(r.hazards).slice(0, 50);
+  if (hazards.length) out.hazards = hazards;
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** Whether the bottle shows its custom data (rather than the online record). */
+export const usesCustomProps = (l: Pick<ReagentLot, 'props' | 'propsSource'>) =>
+  (l.propsSource ?? (l.props ? 'custom' : 'online')) === 'custom';
+
 /** Bottles that can be picked: not used up or disposed. */
 export const available = (l: ReagentLot) => l.status !== 'empty' && l.status !== 'disposed';
 
 /** Text an inventory search matches against. */
 export const lotSearchText = (l: ReagentLot) =>
-  [l.name, l.cas, l.compound?.formula, l.supplier, l.catalogNumber, l.lotNumber, l.spec, l.location, l.note].filter(Boolean).join(' ').toLowerCase();
+  [l.name, l.cas, l.compound?.formula, l.props?.appearance, l.supplier, l.catalogNumber, l.lotNumber, l.spec, l.location, l.note].filter(Boolean).join(' ').toLowerCase();
 
 const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.slice(0, 500) : undefined);
 const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x > 0 ? x : undefined);
@@ -226,10 +274,13 @@ export function normalizeLot(raw: unknown): ReagentLot | null {
     owner: str(r.owner),
   };
   const ci = compoundInfo(compound as Partial<Component>);
+  const props = physProps(r.props);
   return {
     ...normalizeLotInfo(r),
     ...(Object.fromEntries(Object.entries(inv).filter(([, v]) => v !== undefined)) as Partial<ReagentLot>),
     ...(Object.keys(ci).length ? { compound: ci } : {}),
+    ...(props ? { props } : {}),
+    ...(r.propsSource === 'online' || r.propsSource === 'custom' ? { propsSource: r.propsSource } : {}),
     id,
     key: str(r.key) ?? `name:${name.toLowerCase()}`,
     name,

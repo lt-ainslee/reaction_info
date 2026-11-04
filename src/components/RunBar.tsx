@@ -12,13 +12,11 @@ interface Props {
   rxn: Reaction;
   setRxn: (r: Reaction) => void;
   onNotify: (msg: string) => void;
-  /** Placeholder for the reaction code when it is empty. */
-  suggestedCode: string;
 }
 
 const shortDate = (d?: string) => (d ? d.slice(5).replace('-', '/') : '');
 
-export function RunBar({ rxn, setRxn, onNotify, suggestedCode }: Props) {
+export function RunBar({ rxn, setRxn, onNotify }: Props) {
   const { t } = useI18n();
   const r = t.runs;
   const runs = runsOf(rxn);
@@ -27,7 +25,7 @@ export function RunBar({ rxn, setRxn, onNotify, suggestedCode }: Props) {
   const [source, setSource] = useState(active.id);
   const [copyProc, setCopyProc] = useState(true);
   const codeOf = (x: (typeof runs)[number]) => runCode(rxn, x);
-  const autoCode = runCode({ code: rxn.code || suggestedCode }, { seq: active.seq, data: { ...active.data, notebook: undefined } });
+  const autoCode = runCode(rxn, { seq: active.seq, data: { ...active.data, notebook: undefined } });
 
   const create = () => {
     const next = addRun(rxn, { sourceId: source, copyProcedure: copyProc });

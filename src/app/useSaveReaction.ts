@@ -8,20 +8,17 @@ interface Options {
   rxn: Reaction;
   setRxn: Dispatch<SetStateAction<Reaction>>;
   doc: ReturnType<typeof useSavedDoc>;
-  suggestedCode: string;
   remote: boolean;
   notify: (msg: string) => void;
 }
 
 /** Save; "save as" asks for a new name and keeps the original. */
-export function useSaveReaction({ rxn, setRxn, doc, suggestedCode, remote, notify }: Options) {
+export function useSaveReaction({ rxn, setRxn, doc, remote, notify }: Options) {
   const { t, lang } = useI18n();
-  const savedId = doc.openId;
 
   return async (asNew: boolean) => {
-    // A reaction gets the next free code when first saved without one.
-    let r = !savedId && !asNew && !rxn.code?.trim() ? { ...rxn, code: suggestedCode } : rxn;
-    if (r !== rxn) setRxn(r);
+    // Without a code of its own, the reaction code is its title (see reactionCode).
+    let r = rxn;
     if (asNew) {
       const name = prompt(t.saveAsPrompt, rxn.title ? `${rxn.title} ${t.copySuffix}` : '');
       if (name === null) return;
